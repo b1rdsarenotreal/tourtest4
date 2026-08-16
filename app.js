@@ -16,7 +16,7 @@ const POINTS_TABLE = {
 // consolation for going out in the last qualifying round, and a bonus for
 // qualifying into the main draw outright (on top of whatever they then do there).
 const QUALIFYING_POINTS_BASE = {GRAND_SLAM:25, WTA1000:16, WTA500:8, WTA250:5};
-const QUALIFIER_OPTIONS = [4, 8, 16, 32];
+const QUALIFIER_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 const QUAL_ROUND_OPTIONS = [1, 2, 3];
 
 // Common tennis-broadcast 3-letter codes -> ISO 3166-1 alpha-2 (for flag emoji).
@@ -719,7 +719,7 @@ function renderTournaments(){
     const group = el("div", {class:"tourney-year-group"});
     group.appendChild(el("h3", {}, [String(year) + " Season"]));
     byYear.get(year)
-      .sort((a,b) => a.name.localeCompare(b.name))
+      .sort((a,b) => tournamentDateMs(a) - tournamentDateMs(b))
       .forEach(t => {
         const results = computeTournamentResults(t.id);
         let champId = null;
@@ -732,7 +732,9 @@ function renderTournaments(){
           el("span", {class:"tourney-champ"}, champ
             ? ["Champion: ", el("b", {html: playerNameHTML(champ)})]
             : [matchesForTournament(t.id).length ? "In progress" : "No results yet"]),
-          el("button", {class:"btn btn-small btn-primary", "data-open-bracket": t.id}, ["Bracket"])
+          el("button", {class:"btn btn-small btn-primary", "data-open-bracket": t.id}, ["Bracket"]),
+          el("button", {class:"btn btn-small btn-ghost", "data-edit-tournament": t.id}, ["Edit"]),
+          el("button", {class:"btn btn-small btn-danger", "data-delete-tournament": t.id}, ["Delete"])
         ]);
         group.appendChild(row);
       });
@@ -1073,6 +1075,7 @@ function renderBracketSeedsList(t){
     wrap.appendChild(pickerWrap);
     list.appendChild(wrap);
   }
+  updateBracketFillStatus(t);
 }
 
 function handleSeedSearchInput(e){
@@ -1138,6 +1141,19 @@ function renderBracketUnseededList(t){
     });
   }
   container.appendChild(chipsWrap);
+  updateBracketFillStatus(t);
+}
+
+// "X / Y in the main draw field" — Y accounts for slots reserved for qualifiers.
+function updateBracketFillStatus(t){
+  const statusEl = $("#bracket-fill-status");
+  if(!statusEl) return;
+  const directSlots = Math.max(0, t.drawSize - (t.qualifying && t.qualifying.enabled ? t.qualifying.numQualifiers : 0));
+  const filled = t.seeds.filter(Boolean).length + (t.unseededEntrants || []).length;
+  const complete = filled >= directSlots;
+  statusEl.textContent = filled + " / " + directSlots + " in the main draw field" +
+    (complete ? " — field complete" : " — " + (directSlots - filled) + " more needed");
+  statusEl.classList.toggle("complete", complete);
 }
 
 function handleEntrantSearchInput(e){
@@ -1227,6 +1243,19 @@ function renderQualEntrantsList(t){
     });
   }
   container.appendChild(chipsWrap);
+  updateQualFillStatus(t);
+}
+
+// "X / Y in the qualifying field" — Y is the full qualifying bracket capacity.
+function updateQualFillStatus(t){
+  const statusEl = $("#qual-fill-status");
+  if(!statusEl) return;
+  const cap = t.qualifying.numQualifiers * Math.pow(2, t.qualifying.numRounds);
+  const filled = (t.qualifying.entrants || []).length;
+  const complete = filled >= cap;
+  statusEl.textContent = filled + " / " + cap + " in the qualifying field" +
+    (complete ? " — field complete" : " — " + (cap - filled) + " more needed");
+  statusEl.classList.toggle("complete", complete);
 }
 
 function handleQualEntrantSearchInput(e){
@@ -2107,6 +2136,57 @@ function handleAddTournament(ev){
   refreshMatchFormOptions();
 }
 
+function openEditTournament(id){
+  const t = tournamentById(id);
+  if(!t) return;
+  $("#et-id").value = t.id;
+  $("#et-name").value = t.name;
+  $("#et-level").value = t.level;
+  $("#et-surface").value = t.surface;
+  $("#et-date").value = t.startDate || "";
+  $("#edit-tournament-backdrop").classList.remove("hidden");
+}
+function closeEditTournament(){
+  $("#edit-tournament-backdrop").classList.add("hidden");
+}
+function handleEditTournament(ev){
+  ev.preventDefault();
+  const id = $("#et-id").value;
+  const t = tournamentById(id);
+  if(!t) return;
+  const name = $("#et-name").value.trim();
+  const startDate = $("#et-date").value;
+  if(!name || !startDate) return;
+  t.name = name;
+  t.level = $("#et-level").value;
+  t.surface = $("#et-surface").value;
+  t.startDate = startDate;
+  t.year = new Date(startDate + "T00:00:00").getFullYear();
+  saveState();
+  closeEditTournament();
+  renderTournaments();
+  renderRankings();
+  refreshMatchFormOptions();
+  if(currentBracketTournamentId === id) renderBracketPage();
+}
+
+function handleDeleteTournament(id){
+  const t = tournamentById(id);
+  if(!t) return;
+  const matchCount = matchesForTournament(id).length;
+  const warning = matchCount > 0
+    ? "Delete \"" + t.name + "\"? This also removes its " + matchCount + " recorded result" + (matchCount===1?"":"s") + ". This can't be undone."
+    : "Delete \"" + t.name + "\"? This can't be undone.";
+  if(!confirm(warning)) return;
+  state.tournaments = state.tournaments.filter(x => x.id !== id);
+  state.matches = state.matches.filter(m => m.tournamentId !== id);
+  saveState();
+  if(currentBracketTournamentId === id) closeBracket();
+  renderTournaments();
+  renderRankings();
+  refreshMatchFormOptions();
+}
+
 /* ---------------- Tab / view switching ---------------- */
 function switchView(view){
   $all(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === view));
@@ -2147,6 +2227,10 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#at-qual-enabled").addEventListener("change", (e) => {
     $("#at-qual-fields").classList.toggle("hidden", !e.target.checked);
   });
+
+  $("#et-cancel").addEventListener("click", closeEditTournament);
+  $("#edit-tournament-form").addEventListener("submit", handleEditTournament);
+  $("#edit-tournament-backdrop").addEventListener("click", (e) => { if(e.target.id === "edit-tournament-backdrop") closeEditTournament(); });
 
   $("#bracket-back").addEventListener("click", closeBracket);
   $("#bracket-toggle-seed").addEventListener("click", () => $("#bracket-seed-grid").classList.toggle("hidden"));
@@ -2193,6 +2277,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if(openBtn){ renderPlayerProfile(openBtn.dataset.openPlayer); return; }
     const bracketBtn = e.target.closest("[data-open-bracket]");
     if(bracketBtn){ openBracket(bracketBtn.dataset.openBracket); return; }
+    const editTBtn = e.target.closest("[data-edit-tournament]");
+    if(editTBtn){ openEditTournament(editTBtn.dataset.editTournament); return; }
+    const delTBtn = e.target.closest("[data-delete-tournament]");
+    if(delTBtn){ handleDeleteTournament(delTBtn.dataset.deleteTournament); return; }
     const delBtn = e.target.closest("[data-delete-match]");
     if(delBtn){
       if(confirm("Delete this match result? This can't be undone.")){

@@ -182,10 +182,21 @@
         </label>
         <label>Qualifiers to main draw
           <select id="qual-numqualifiers">
+            <option value="2">2</option>
+            <option value="3">3</option>
             <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
             <option value="8" selected>8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15">15</option>
             <option value="16">16</option>
-            <option value="32">32</option>
           </select>
         </label>
         <label>Qualifying rounds
@@ -201,6 +212,7 @@
         <div class="bracket-section-title"><h3>Qualifying Entrants</h3></div>
         <p class="modal-help">Search and add players below.</p>
         <div id="qual-entrants-list"></div>
+        <p class="fill-status" id="qual-fill-status"></p>
         <div class="form-actions" style="margin-top:16px;">
           <button class="btn btn-primary" id="qual-generate-draw">Generate Qualifying Draw</button>
           <span class="form-msg" id="qual-generate-msg"></span>
@@ -228,6 +240,7 @@
       </div>
       <p class="modal-help">Everyone else in the field. They'll be drawn at random into the remaining slots.</p>
       <div id="bracket-unseeded-list"></div>
+      <p class="fill-status" id="bracket-fill-status"></p>
 
       <div class="form-actions" style="margin-top:16px;">
         <button class="btn btn-primary" id="bracket-generate-draw">Generate Draw</button>
@@ -326,6 +339,44 @@
   </div>
 </div>
 
+<!-- Edit tournament modal -->
+<div class="modal-backdrop hidden" id="edit-tournament-backdrop">
+  <div class="modal">
+    <form id="edit-tournament-form">
+      <h3>Edit Tournament</h3>
+      <input type="hidden" id="et-id">
+      <label>Name
+        <input type="text" id="et-name" required maxlength="60">
+      </label>
+      <div class="field-row">
+        <label>Level
+          <select id="et-level">
+            <option value="GRAND_SLAM">Grand Slam</option>
+            <option value="WTA1000">WATP 1000</option>
+            <option value="WTA500">WATP 500</option>
+            <option value="WTA250">WATP 250</option>
+          </select>
+        </label>
+        <label>Surface
+          <select id="et-surface">
+            <option value="hard">Hard</option>
+            <option value="clay">Clay</option>
+            <option value="grass">Grass</option>
+          </select>
+        </label>
+      </div>
+      <label>Start date
+        <input type="date" id="et-date" required>
+      </label>
+      <p class="modal-help">Draw size and qualifying settings are edited from the tournament's Bracket page.</p>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" id="et-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Bulk add players modal -->
 <div class="modal-backdrop hidden" id="bulk-add-backdrop">
   <div class="modal">
@@ -388,10 +439,21 @@
       <div class="field-row hidden" id="at-qual-fields">
         <label>Qualifiers to main draw
           <select id="at-qual-numqualifiers">
+            <option value="2">2</option>
+            <option value="3">3</option>
             <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
             <option value="8" selected>8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11">11</option>
+            <option value="12">12</option>
+            <option value="13">13</option>
+            <option value="14">14</option>
+            <option value="15">15</option>
             <option value="16">16</option>
-            <option value="32">32</option>
           </select>
         </label>
         <label>Qualifying rounds

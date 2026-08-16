@@ -413,6 +413,13 @@ form textarea{
 .picker-option:hover{background: var(--paper-2);}
 .picker-empty{padding: 8px 10px; font-size: 12px; color: var(--ink-soft); font-family:'JetBrains Mono', monospace;}
 .picker-empty-note{font-size: 13px; color: var(--ink-soft); margin: 8px 0 0;}
+.fill-status{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin: 10px 0 0;
+}
+.fill-status.complete{color: var(--grass); font-weight: 700;}
 
 .entrant-chips{display:flex; flex-wrap:wrap; gap:8px; margin-top: 14px;}
 .entrant-chip{
@@ -673,8 +680,12 @@ form textarea{
 .bracket-slot .slot-name{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .seed-badge{
   font-family:'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--ink-soft);
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  background: var(--ball);
+  padding: 1px 4px;
+  border-radius: 2px;
   margin-right: 4px;
   flex-shrink: 0;
 }
