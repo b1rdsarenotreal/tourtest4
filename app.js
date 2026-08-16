@@ -421,6 +421,25 @@ function renderScoreboardHTML(match){
   return '<div class="scoreboard">' + cells + '</div>';
 }
 
+// Per-player inline score, attached directly to that player's own row in the
+// bracket (rather than a shared winner-on-top chip) so the score always sits
+// next to the name it belongs to, regardless of which slot they're drawn in.
+function slotScoreHTML(match, playerId){
+  if(!match) return "";
+  if(match.walkover){
+    return playerId === match.winnerId ? "" : '<span class="score-inline wo-tag">W/O</span>';
+  }
+  const sets = match.sets || [];
+  if(sets.length === 0) return "";
+  const cells = sets.map(s => {
+    const mine = match.playerAId === playerId ? s.a : s.b;
+    const opp = match.playerAId === playerId ? s.b : s.a;
+    const tb = s.tb && mine < opp ? '<sup class="sb-tb-inline">' + escapeHtml(s.tb) + '</sup>' : "";
+    return '<span class="set-num' + (mine > opp ? ' won' : '') + '">' + escapeHtml(mine) + tb + '</span>';
+  }).join("");
+  return '<span class="score-inline">' + cells + '</span>';
+}
+
 /* ---------------- Rankings view ---------------- */
 function populateRankingsYearSelect(){
   const sel = $("#rankings-year");
@@ -1430,21 +1449,16 @@ function buildQualSlotRow(slot, m){
   const isWinner = m.status !== "ready" && m.winnerSlot && slot.type === "player" && m.winnerSlot.playerId === slot.playerId;
   const row = el("div", {class: "bracket-slot" + (isWinner ? " slot-winner" : "") + extraClass});
   row.appendChild(el("span", {class:"slot-name", html: nameHTML}));
+  if(m.status === "played" && m.existingMatch && slot.type === "player"){
+    row.appendChild(el("span", {html: slotScoreHTML(m.existingMatch, slot.playerId)}));
+  }
   return row;
 }
 
 function buildQualMatchCard(t, m){
   const card = el("div", {class:"bracket-match status-" + m.status});
-  const body = el("div", {class:"bracket-match-body"});
-  const names = el("div", {class:"bracket-match-names"}, [
-    buildQualSlotRow(m.slotA, m),
-    buildQualSlotRow(m.slotB, m)
-  ]);
-  body.appendChild(names);
-  if(m.status === "played" && m.existingMatch){
-    body.appendChild(el("div", {class:"bracket-match-score", html: renderScoreboardHTML(m.existingMatch)}));
-  }
-  card.appendChild(body);
+  card.appendChild(buildQualSlotRow(m.slotA, m));
+  card.appendChild(buildQualSlotRow(m.slotB, m));
 
   if(m.status === "ready"){
     card.appendChild(buildQualEntryForm(t, m));
@@ -1706,21 +1720,16 @@ function buildSlotRow(slot, m, which, t){
   const isWinner = m.status !== "ready" && m.winnerSlot && slot.type === "player" && m.winnerSlot.playerId === slot.playerId;
   const row = el("div", {class: "bracket-slot" + (isWinner ? " slot-winner" : "") + extraClass});
   row.appendChild(el("span", {class:"slot-name", html: nameHTML}));
+  if(m.status === "played" && m.existingMatch && slot.type === "player"){
+    row.appendChild(el("span", {html: slotScoreHTML(m.existingMatch, slot.playerId)}));
+  }
   return row;
 }
 
 function buildBracketMatchCard(t, m){
   const card = el("div", {class:"bracket-match status-" + m.status});
-  const body = el("div", {class:"bracket-match-body"});
-  const names = el("div", {class:"bracket-match-names"}, [
-    buildSlotRow(m.slotA, m, "A", t),
-    buildSlotRow(m.slotB, m, "B", t)
-  ]);
-  body.appendChild(names);
-  if(m.status === "played" && m.existingMatch){
-    body.appendChild(el("div", {class:"bracket-match-score", html: renderScoreboardHTML(m.existingMatch)}));
-  }
-  card.appendChild(body);
+  card.appendChild(buildSlotRow(m.slotA, m, "A", t));
+  card.appendChild(buildSlotRow(m.slotB, m, "B", t));
 
   if(m.status === "ready"){
     card.appendChild(buildBracketEntryForm(t, m));

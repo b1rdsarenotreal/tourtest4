@@ -633,7 +633,7 @@ form textarea{
 }
 .bracket-round{
   position: relative;
-  width: 230px;
+  width: 280px;
   flex-shrink: 0;
 }
 .bracket-round-title{
@@ -652,24 +652,6 @@ form textarea{
   font-size: 13px;
 }
 .bracket-match.status-played{border-color: var(--ink);}
-.bracket-match-body{
-  display:flex;
-  align-items:stretch;
-}
-.bracket-match-names{
-  flex: 1;
-  min-width: 0;
-}
-.bracket-match-score{
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding: 0 8px;
-  border-left: 1px dashed var(--line);
-  flex-shrink: 0;
-}
-.bracket-match-score .scoreboard{font-size: 11px;}
-.bracket-match-score .sb-set{padding: 2px 6px;}
 .bracket-slot{
   display:flex; align-items:center; justify-content:space-between;
   gap: 8px;
@@ -677,7 +659,46 @@ form textarea{
   border-bottom: 1px solid var(--line);
 }
 .bracket-slot:last-child{border-bottom:none;}
-.bracket-slot .slot-name{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.bracket-slot .slot-name{
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  line-height: 1.25;
+}
+.score-inline{
+  display:inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+.score-inline .set-num{
+  position: relative;
+  font-family:'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 1px 5px;
+  line-height: 1.4;
+}
+.score-inline .set-num.won{
+  font-weight: 700;
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.score-inline .sb-tb-inline{
+  font-size: 8px;
+  margin-left: 1px;
+  color: var(--ink-soft);
+}
+.score-inline.wo-tag{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
 .seed-badge{
   font-family:'JetBrains Mono', monospace;
   font-size: 9px;
