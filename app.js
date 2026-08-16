@@ -7,15 +7,15 @@ const ROUND_ORDER = ["R128","R64","R32","R16","QF","SF","F"];
 const ROUND_LABELS = {R128:"R128", R64:"R64", R32:"R32", R16:"R16", QF:"QF", SF:"SF", F:"F", Q1:"Q1", Q2:"Q2", Q3:"Q3"};
 const LEVEL_LABELS = {GRAND_SLAM:"Grand Slam", WTA1000:"WATP 1000", WTA500:"WATP 500", WTA250:"WATP 250"};
 const POINTS_TABLE = {
-  GRAND_SLAM: {R128:10, R64:45,  R32:90, R16:180, QF:360, SF:720, F:1200, W:2000},
-  WTA1000:    {R128:10,  R64:10,  R32:45,  R16:90, QF:180, SF:360, F:600,  W:1000},
-  WTA500:     {R128:0,  R64:0,   R32:5,   R16:45,  QF:90, SF:180, F:300,  W:500},
-  WTA250:     {R128:0,  R64:0,   R32:1,   R16:20,  QF:45,  SF:90,  F:150,  W:250}
+  GRAND_SLAM: {R128:10, R64:70,  R32:130, R16:240, QF:430, SF:780, F:1300, W:2000},
+  WTA1000:    {R128:0,  R64:10,  R32:65,  R16:120, QF:215, SF:390, F:650,  W:1000},
+  WTA500:     {R128:0,  R64:0,   R32:1,   R16:60,  QF:108, SF:195, F:325,  W:500},
+  WTA250:     {R128:0,  R64:0,   R32:0,   R16:30,  QF:54,  SF:98,  F:163,  W:250}
 };
 // Points for coming through qualifying: 0 for early-round exits, a small
 // consolation for going out in the last qualifying round, and a bonus for
 // qualifying into the main draw outright (on top of whatever they then do there).
-const QUALIFYING_POINTS_BASE = {GRAND_SLAM:25, WTA1000:25, WTA500:20, WTA250:12};
+const QUALIFYING_POINTS_BASE = {GRAND_SLAM:25, WTA1000:16, WTA500:8, WTA250:5};
 const QUALIFIER_OPTIONS = [4, 8, 16, 32];
 const QUAL_ROUND_OPTIONS = [1, 2, 3];
 
