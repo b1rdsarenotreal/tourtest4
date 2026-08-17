@@ -64,6 +64,12 @@ function playerNameHTML(player){
   const flag = flagEmoji(player.country);
   return (flag ? '<span class="flag">' + flag + '</span>' : "") + escapeHtml(player.name);
 }
+// Same, but wrapped so clicking it opens that player's profile anywhere it's used —
+// works via the existing document-level [data-open-player] click delegation.
+function playerLinkHTML(player){
+  if(!player) return "";
+  return '<span class="name-link" data-open-player="' + player.id + '">' + playerNameHTML(player) + '</span>';
+}
 
 /* ---------------- Storage ---------------- */
 function loadState(){
@@ -681,9 +687,9 @@ function renderPlayerProfile(playerId){
       const row = el("div", {class:"match-row"}, [
         el("span", {class:"match-round"}, [ROUND_LABELS[m.round]]),
         el("span", {class:"match-players", html:
-          (m.winnerId === a.id ? '<span class="winner">' + playerNameHTML(a) + '</span>' : playerNameHTML(a)) +
+          (m.winnerId === a.id ? '<span class="winner">' + playerLinkHTML(a) + '</span>' : playerLinkHTML(a)) +
           ' def. ' +
-          (m.winnerId === b.id ? '<span class="winner">' + playerNameHTML(b) + '</span>' : playerNameHTML(b))
+          (m.winnerId === b.id ? '<span class="winner">' + playerLinkHTML(b) + '</span>' : playerLinkHTML(b))
         }),
         el("span", {html: renderScoreboardHTML(m)}),
         el("span", {class:"match-tourney"}, [t ? (t.name + " '" + String(t.year).slice(-2)) : ""])
@@ -762,7 +768,7 @@ function renderTournaments(){
           el("span", {class:"surface-tag surface-" + t.surface}, [t.surface]),
           el("span", {class:"tourney-name"}, [t.name + (t.startDate ? " — " + t.startDate : "")]),
           el("span", {class:"tourney-champ"}, champ
-            ? ["Champion: ", el("b", {html: playerNameHTML(champ)})]
+            ? ["Champion: ", el("b", {html: playerLinkHTML(champ)})]
             : [matchesForTournament(t.id).length ? "In progress" : "No results yet"]),
           el("button", {class:"btn btn-small btn-primary", "data-open-bracket": t.id}, ["Bracket"]),
           el("button", {class:"btn btn-small btn-ghost", "data-edit-tournament": t.id}, ["Edit"]),
@@ -832,6 +838,40 @@ function shuffleArray(arr){
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// Rebuilding a bracket round can shrink or grow the page a lot (a tall
+// score-entry card collapses to a compact result once saved). Without this,
+// the browser clamps scroll position when the document shrinks, which reads
+// as the page "jumping to the top" even though nothing actually navigated.
+function withScrollPreserved(fn){
+  const y = window.scrollY;
+  fn();
+  window.scrollTo(0, y);
+}
+
+// Single save path for both the main draw and qualifying, used by both the
+// auto-detected-from-score flow and the click-to-award-walkover flow.
+function persistMatchResult(t, m, winnerPlayerId, sets, walkover, bracketType){
+  state.matches.push({
+    id: uid("m"),
+    tournamentId: t.id,
+    bracket: bracketType,
+    round: m.round,
+    slot: m.slotIndex,
+    playerAId: m.slotA.playerId,
+    playerBId: m.slotB.playerId,
+    winnerId: winnerPlayerId,
+    walkover,
+    sets,
+    createdAt: Date.now()
+  });
+  saveState();
+  withScrollPreserved(() => {
+    if(bracketType === "qual") renderQualBracketRounds(t);
+    else renderBracketRounds(t);
+  });
+  renderRankings();
 }
 
 // Classic single-elimination seeding order: result[i] is the seed rank that
@@ -1037,8 +1077,10 @@ function renderBracketPage(){
     if(confirm("Clear all " + count + " recorded result" + (count===1?"":"s") + " for " + t.name + " (main draw and qualifying)? The seeded draws stay intact. This can't be undone.")){
       state.matches = state.matches.filter(m => m.tournamentId !== t.id);
       saveState();
-      renderBracketRounds(t);
-      renderQualBracketRounds(t);
+      withScrollPreserved(() => {
+        renderBracketRounds(t);
+        renderQualBracketRounds(t);
+      });
       renderRankings();
     }
   });
@@ -1471,27 +1513,37 @@ function renderQualBracketRounds(t){
   layoutBracketColumns(wrap, rounds, (m) => buildQualMatchCard(t, m), (roundObj) => roundObj.round);
 }
 
-function buildQualSlotRow(slot, m){
+function buildQualSlotRow(t, slot, m){
   let nameHTML, extraClass = "";
   if(slot.type === "player"){
     const p = playerById(slot.playerId);
-    nameHTML = p ? playerNameHTML(p) : "(removed player)";
+    nameHTML = p ? (m.status === "ready" ? playerNameHTML(p) : playerLinkHTML(p)) : "(removed player)";
   } else {
     nameHTML = "TBD"; extraClass = " slot-empty";
   }
   const isWinner = m.status !== "ready" && m.winnerSlot && slot.type === "player" && m.winnerSlot.playerId === slot.playerId;
-  const row = el("div", {class: "bracket-slot" + (isWinner ? " slot-winner" : "") + extraClass});
+  const isWalkoverClickable = m.status === "ready" && slot.type === "player";
+  const row = el("div", {class: "bracket-slot" + (isWinner ? " slot-winner" : "") + extraClass + (isWalkoverClickable ? " slot-walkover-target" : "")});
   row.appendChild(el("span", {class:"slot-name", html: nameHTML}));
   if(m.status === "played" && m.existingMatch && slot.type === "player"){
     row.appendChild(el("span", {html: slotScoreHTML(m.existingMatch, slot.playerId)}));
+  }
+  if(isWalkoverClickable){
+    const p = playerById(slot.playerId);
+    row.title = "Click to award " + (p ? p.name : "this player") + " the win by walkover";
+    row.addEventListener("click", () => {
+      if(p && confirm("Award the win to " + p.name + " by walkover?")){
+        persistMatchResult(t, m, p.id, [], true, "qual");
+      }
+    });
   }
   return row;
 }
 
 function buildQualMatchCard(t, m){
   const card = el("div", {class:"bracket-match status-" + m.status});
-  card.appendChild(buildQualSlotRow(m.slotA, m));
-  card.appendChild(buildQualSlotRow(m.slotB, m));
+  card.appendChild(buildQualSlotRow(t, m.slotA, m));
+  card.appendChild(buildQualSlotRow(t, m.slotB, m));
 
   if(m.status === "ready"){
     card.appendChild(buildQualEntryForm(t, m));
@@ -1501,7 +1553,7 @@ function buildQualMatchCard(t, m){
       if(confirm("Clear this result? Later qualifying rounds built on it will be cleared too.")){
         deleteQualCascade(t, qualRoundNames(t.qualifying.numRounds).indexOf(m.round), m.slotIndex);
         saveState();
-        renderQualBracketRounds(t);
+        withScrollPreserved(() => renderQualBracketRounds(t));
         renderRankings();
       }
     });
@@ -1527,74 +1579,33 @@ function buildQualEntryForm(t, m){
   }
   form.appendChild(setRow);
 
-  const walkoverRow = el("label", {class:"bracket-walkover-row"});
-  const walkoverCheck = el("input", {type:"checkbox"});
-  walkoverRow.appendChild(walkoverCheck);
-  walkoverRow.appendChild(document.createTextNode(" Walkover / retirement"));
-  form.appendChild(walkoverRow);
-
-  const pA = m.slotA.type === "player" ? playerById(m.slotA.playerId) : null;
-  const pB = m.slotB.type === "player" ? playerById(m.slotB.playerId) : null;
-
   const errMsg = el("div", {class:"form-msg"}, []);
-
-  // Normal path: enter the score, the winner is read off who took 2 of 3 sets.
-  const saveBtn = el("button", {type:"button", class:"btn btn-small btn-primary", style:"width:100%;"}, ["Save Result"]);
-  // Walkover path: there's no score to read a winner from, so it's picked directly.
-  const walkoverChoiceRow = el("div", {class:"bracket-winner-row hidden"});
-  const btnA = el("button", {type:"button", class:"btn btn-small"}, [pA ? pA.name + " won" : "A won"]);
-  const btnB = el("button", {type:"button", class:"btn btn-small"}, [pB ? pB.name + " won" : "B won"]);
-  walkoverChoiceRow.appendChild(btnA); walkoverChoiceRow.appendChild(btnB);
-
-  form.appendChild(saveBtn);
-  form.appendChild(walkoverChoiceRow);
   form.appendChild(errMsg);
 
-  walkoverCheck.addEventListener("change", () => {
-    saveBtn.classList.toggle("hidden", walkoverCheck.checked);
-    walkoverChoiceRow.classList.toggle("hidden", !walkoverCheck.checked);
-    errMsg.textContent = "";
-  });
-
-  function persist(winnerPlayerId, sets){
-    state.matches.push({
-      id: uid("m"),
-      tournamentId: t.id,
-      bracket: "qual",
-      round: m.round,
-      slot: m.slotIndex,
-      playerAId: m.slotA.playerId,
-      playerBId: m.slotB.playerId,
-      winnerId: winnerPlayerId,
-      walkover: walkoverCheck.checked,
-      sets,
-      createdAt: Date.now()
-    });
-    saveState();
-    renderQualBracketRounds(t);
-    renderRankings();
-  }
-
-  saveBtn.addEventListener("click", () => {
+  // No submit button — the winner is read off as soon as someone has taken
+  // 2 of the (up to) 3 sets entered. Click either name above for a walkover.
+  function evaluateAndMaybeSave(){
     errMsg.textContent = "";
     let sets = [];
     for(const pair of setInputs){
       const av = pair.a.value, bv = pair.b.value;
       if(av === "" && bv === "") continue;
-      if(av === "" || bv === ""){ errMsg.textContent = "Finish that set or leave it blank."; return; }
+      if(av === "" || bv === "") return;
       const an = Number(av), bn = Number(bv);
       if(an === bn){ errMsg.textContent = "A set can't end in a tie."; return; }
       sets.push({a: an, b: bn});
     }
-    if(sets.length === 0){ errMsg.textContent = "Enter at least one set, or tick walkover."; return; }
+    if(sets.length === 0) return;
     let aSets = 0, bSets = 0;
     sets.forEach(s => { if(s.a > s.b) aSets++; else bSets++; });
-    if(aSets === bSets){ errMsg.textContent = "Sets are tied " + aSets + "-" + bSets + " — add one more to decide the match."; return; }
-    persist(aSets > bSets ? m.slotA.playerId : m.slotB.playerId, sets);
-  });
+    if(aSets < 2 && bSets < 2) return;
+    persistMatchResult(t, m, aSets > bSets ? m.slotA.playerId : m.slotB.playerId, sets, false, "qual");
+  }
 
-  btnA.addEventListener("click", () => { if(pA) persist(pA.id, []); });
-  btnB.addEventListener("click", () => { if(pB) persist(pB.id, []); });
+  setInputs.forEach(pair => {
+    pair.a.addEventListener("input", evaluateAndMaybeSave);
+    pair.b.addEventListener("input", evaluateAndMaybeSave);
+  });
 
   return form;
 }
@@ -1700,7 +1711,7 @@ function handleSeedSelectChange(e){
   t.bracketEntries[i] = entry;
   deleteCascade(t, 0, Math.floor(i / 2));
   saveState();
-  renderBracketRounds(t);
+  withScrollPreserved(() => renderBracketRounds(t));
   renderRankings();
 }
 
@@ -1722,17 +1733,29 @@ function buildSlotRow(slot, m, which, t){
     const isQ = t ? isMainDrawQualifier(t, slot.playerId) : false;
     const badges = (seedNum ? '<span class="seed-badge">' + seedNum + '</span>' : "") +
       (isQ ? '<span class="qual-badge">Q</span>' : "");
-    nameHTML = badges + (p ? playerNameHTML(p) : "(removed player)");
+    // Ready matches: clicking a name awards that player the win by walkover.
+    // Everything else: clicking a name opens their profile.
+    nameHTML = badges + (p ? (m.status === "ready" ? playerNameHTML(p) : playerLinkHTML(p)) : "(removed player)");
   } else if(slot.type === "bye"){
     nameHTML = "Bye"; extraClass = " slot-bye";
   } else {
     nameHTML = "TBD"; extraClass = " slot-empty";
   }
   const isWinner = m.status !== "ready" && m.winnerSlot && slot.type === "player" && m.winnerSlot.playerId === slot.playerId;
-  const row = el("div", {class: "bracket-slot" + (isWinner ? " slot-winner" : "") + extraClass});
+  const isWalkoverClickable = m.status === "ready" && slot.type === "player";
+  const row = el("div", {class: "bracket-slot" + (isWinner ? " slot-winner" : "") + extraClass + (isWalkoverClickable ? " slot-walkover-target" : "")});
   row.appendChild(el("span", {class:"slot-name", html: nameHTML}));
   if(m.status === "played" && m.existingMatch && slot.type === "player"){
     row.appendChild(el("span", {html: slotScoreHTML(m.existingMatch, slot.playerId)}));
+  }
+  if(isWalkoverClickable){
+    const p = playerById(slot.playerId);
+    row.title = "Click to award " + (p ? p.name : "this player") + " the win by walkover";
+    row.addEventListener("click", () => {
+      if(p && confirm("Award the win to " + p.name + " by walkover?")){
+        persistMatchResult(t, m, p.id, [], true, "main");
+      }
+    });
   }
   return row;
 }
@@ -1750,7 +1773,7 @@ function buildBracketMatchCard(t, m){
       if(confirm("Clear this result? Later rounds built on it will be cleared too.")){
         deleteCascade(t, bracketRoundNames(capacityOf(t.drawSize)).indexOf(m.round), m.slotIndex);
         saveState();
-        renderBracketRounds(t);
+        withScrollPreserved(() => renderBracketRounds(t));
         renderRankings();
       }
     });
@@ -1776,74 +1799,33 @@ function buildBracketEntryForm(t, m){
   }
   form.appendChild(setRow);
 
-  const walkoverRow = el("label", {class:"bracket-walkover-row"});
-  const walkoverCheck = el("input", {type:"checkbox"});
-  walkoverRow.appendChild(walkoverCheck);
-  walkoverRow.appendChild(document.createTextNode(" Walkover"));
-  form.appendChild(walkoverRow);
-
-  const pA = m.slotA.type === "player" ? playerById(m.slotA.playerId) : null;
-  const pB = m.slotB.type === "player" ? playerById(m.slotB.playerId) : null;
-
   const errMsg = el("div", {class:"form-msg"}, []);
-
-  // Normal path: enter the score, the winner is read off who took 2 of 3 sets.
-  const saveBtn = el("button", {type:"button", class:"btn btn-small btn-primary", style:"width:100%;"}, ["Save Result"]);
-  // Walkover path: there's no score to read a winner from, so it's picked directly.
-  const walkoverChoiceRow = el("div", {class:"bracket-winner-row hidden"});
-  const btnA = el("button", {type:"button", class:"btn btn-small btn-primary"}, [pA ? pA.name + " won" : "A won"]);
-  const btnB = el("button", {type:"button", class:"btn btn-small btn-primary"}, [pB ? pB.name + " won" : "B won"]);
-  walkoverChoiceRow.appendChild(btnA); walkoverChoiceRow.appendChild(btnB);
-
-  form.appendChild(saveBtn);
-  form.appendChild(walkoverChoiceRow);
   form.appendChild(errMsg);
 
-  walkoverCheck.addEventListener("change", () => {
-    saveBtn.classList.toggle("hidden", walkoverCheck.checked);
-    walkoverChoiceRow.classList.toggle("hidden", !walkoverCheck.checked);
-    errMsg.textContent = "";
-  });
-
-  function persist(winnerPlayerId, sets){
-    state.matches.push({
-      id: uid("m"),
-      tournamentId: t.id,
-      bracket: "main",
-      round: m.round,
-      slot: m.slotIndex,
-      playerAId: m.slotA.playerId,
-      playerBId: m.slotB.playerId,
-      winnerId: winnerPlayerId,
-      walkover: walkoverCheck.checked,
-      sets,
-      createdAt: Date.now()
-    });
-    saveState();
-    renderBracketRounds(t);
-    renderRankings();
-  }
-
-  saveBtn.addEventListener("click", () => {
+  // No submit button — the winner is read off as soon as someone has taken
+  // 2 of the (up to) 3 sets entered. Click either name above for a walkover.
+  function evaluateAndMaybeSave(){
     errMsg.textContent = "";
     let sets = [];
     for(const pair of setInputs){
       const av = pair.a.value, bv = pair.b.value;
       if(av === "" && bv === "") continue;
-      if(av === "" || bv === ""){ errMsg.textContent = "Finish that set or leave it blank."; return; }
+      if(av === "" || bv === "") return; // still mid-entry, wait quietly
       const an = Number(av), bn = Number(bv);
       if(an === bn){ errMsg.textContent = "A set can't end in a tie."; return; }
       sets.push({a: an, b: bn});
     }
-    if(sets.length === 0){ errMsg.textContent = "Enter at least one set, or tick walkover."; return; }
+    if(sets.length === 0) return;
     let aSets = 0, bSets = 0;
     sets.forEach(s => { if(s.a > s.b) aSets++; else bSets++; });
-    if(aSets === bSets){ errMsg.textContent = "Sets are tied " + aSets + "-" + bSets + " — add one more to decide the match."; return; }
-    persist(aSets > bSets ? m.slotA.playerId : m.slotB.playerId, sets);
-  });
+    if(aSets < 2 && bSets < 2) return; // not decided yet
+    persistMatchResult(t, m, aSets > bSets ? m.slotA.playerId : m.slotB.playerId, sets, false, "main");
+  }
 
-  btnA.addEventListener("click", () => { if(pA) persist(pA.id, []); });
-  btnB.addEventListener("click", () => { if(pB) persist(pB.id, []); });
+  setInputs.forEach(pair => {
+    pair.a.addEventListener("input", evaluateAndMaybeSave);
+    pair.b.addEventListener("input", evaluateAndMaybeSave);
+  });
 
   return form;
 }
@@ -1910,7 +1892,7 @@ function renderRecordListInto(container, map, unitLabel){
   rows.forEach((r, i) => {
     container.appendChild(el("div", {class:"record-row"}, [
       el("span", {class:"record-rank"}, [String(i+1)]),
-      el("span", {class:"record-name", html: playerNameHTML(r.p)}),
+      el("span", {class:"record-name", html: playerLinkHTML(r.p)}),
       el("span", {class:"record-count"}, [String(r.count) + " " + unitLabel])
     ]));
   });

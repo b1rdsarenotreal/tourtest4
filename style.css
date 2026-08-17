@@ -724,6 +724,10 @@ form textarea{
 .bracket-slot.slot-empty .slot-name{color: var(--ink-soft); font-style: italic;}
 .bracket-slot.slot-bye .slot-name{color: var(--ink-soft); font-family:'JetBrains Mono', monospace; font-size:11px; text-transform:uppercase;}
 .bracket-slot.slot-winner{background: var(--paper-2); font-weight: 700;}
+.bracket-slot.slot-walkover-target{cursor: pointer;}
+.bracket-slot.slot-walkover-target:hover{background: var(--paper-2);}
+.name-link{cursor: pointer;}
+.name-link:hover{text-decoration: underline;}
 .bracket-match-actions{padding: 5px 8px; border-top: 1px dashed var(--line); display:flex; justify-content: space-between; align-items:center;}
 .bracket-match-actions .btn{width:100%;}
 .bracket-match-form{padding: 7px; border-top: 1px dashed var(--line);}
