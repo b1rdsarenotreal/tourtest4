@@ -468,6 +468,36 @@ form textarea{
 }
 .entrant-chip-remove:hover{background: var(--clay); color:white;}
 
+.entry-list-row{
+  display:flex; align-items:center; gap: 10px;
+  padding: 8px 10px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+}
+.entry-list-name{flex: 1; min-width: 0; font-size: 13px;}
+.entry-list-wc-group{display:flex; gap: 4px; flex-shrink: 0;}
+.entry-list-wc-btn{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: white;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.entry-list-wc-btn.active-none{background: var(--ink); color: var(--paper); border-color: var(--ink);}
+.entry-list-wc-btn.active-main{background: var(--ball); color: white; border-color: var(--ball);}
+.entry-list-wc-btn.active-qual{background: var(--pink); color: white; border-color: var(--pink);}
+.entry-list-remove{
+  background: var(--paper-2); border: none; border-radius: 50%;
+  width: 20px; height: 20px; flex-shrink: 0; cursor: pointer;
+  color: var(--ink-soft); font-size: 13px; line-height: 1;
+}
+.entry-list-remove:hover{background: var(--clay); color: white;}
+
 .rank-move{
   font-family:'JetBrains Mono', monospace;
   font-size: 11px;

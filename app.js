@@ -338,6 +338,15 @@ function computeRankingsAsOf(asOfMs){
   return totals;
 }
 
+// A real tournament seeds off the actual published rankings, and "weeks at
+// No. 1" is a record of what was truly published — not a live feed. This is
+// the official one-week-behind version of computeRankingsAsOf, for anywhere
+// that needs the historically-accurate published ranking rather than a
+// real-time snapshot.
+function officialRankingsAsOf(mondayW){
+  return computeRankingsAsOf(mondayW - 7 * MS_PER_DAY);
+}
+
 // The actual counting rule: every mandatory result counts no matter how
 // many there are, then the best remaining (non-mandatory) results fill out
 // the rest of the cap.
@@ -757,7 +766,7 @@ function renderPlayerProfile(playerId){
   const snapshotDates = getRankingSnapshotDates();
   const history = [];
   snapshotDates.forEach(d => {
-    const rankMap = ranksFromTotals(computeRankingsAsOf(d));
+    const rankMap = ranksFromTotals(officialRankingsAsOf(d));
     if(rankMap[playerId]) history.push({date: d, rank: rankMap[playerId]});
   });
   const peakRank = history.length ? Math.min(...history.map(h => h.rank)) : null;
@@ -1015,6 +1024,7 @@ function ensureBracketEntries(t){
   }
   if(!Array.isArray(t.unseededEntrants)) t.unseededEntrants = [];
   if(!Array.isArray(t.qualifierIds)) t.qualifierIds = [];
+  if(!Array.isArray(t.entryList)) t.entryList = [];
 }
 
 // Seed number (1-indexed) for a player in this tournament's main draw, or null.
@@ -1284,6 +1294,7 @@ function renderBracketPage(){
 
   populateBracketDateSelects(t);
   renderQualifyingConfig(t);
+  renderEntryListBody(t);
 
   $("#bracket-numseeds-label").textContent = numSeedsFor(t.drawSize);
   renderBracketSeedsList(t);
@@ -1817,7 +1828,7 @@ function handleAutofillMain(){
   const qualSlots = t.qualifying.enabled ? t.qualifying.numQualifiers : 0;
   const directSlots = Math.max(0, t.drawSize - qualSlots);
 
-  const entryRanks = ranksFromTotals(computeRankingsAsOf(entryDate));
+  const entryRanks = ranksFromTotals(officialRankingsAsOf(entryDate));
   const alreadyUsed = new Set([...(t.seeds || []).filter(Boolean), ...(t.unseededEntrants || [])]);
   const fieldCandidates = state.players
     .filter(p => !alreadyUsed.has(p.id))
@@ -1828,7 +1839,7 @@ function handleAutofillMain(){
   const openUnseededCount = Math.max(0, directSlots - t.seeds.filter(Boolean).length - (t.unseededEntrants||[]).length);
 
   const field = fieldCandidates.slice(0, openSeedSlots.length + openUnseededCount);
-  const seedRanks = ranksFromTotals(computeRankingsAsOf(seedDate));
+  const seedRanks = ranksFromTotals(officialRankingsAsOf(seedDate));
   const reranked = field.slice().sort((a,b) => (seedRanks[a.id] || 99999) - (seedRanks[b.id] || 99999) || a.name.localeCompare(b.name));
 
   let filled = 0;
@@ -1856,7 +1867,7 @@ function handleAutofillQual(){
   const qualSlots = t.qualifying.numQualifiers * Math.pow(2, t.qualifying.numRounds);
   const directSlots = Math.max(0, t.drawSize - t.qualifying.numQualifiers);
 
-  const entryRanks = ranksFromTotals(computeRankingsAsOf(entryDate));
+  const entryRanks = ranksFromTotals(officialRankingsAsOf(entryDate));
   const usedInMain = new Set([...(t.seeds || []).filter(Boolean), ...(t.unseededEntrants || [])]);
   const usedInQual = new Set(t.qualifying.entrants || []);
   const candidates = state.players
@@ -1873,6 +1884,167 @@ function handleAutofillQual(){
   msg.textContent = toAdd.length > 0 ? "Added " + toAdd.length + " qualifying entrant" + (toAdd.length===1?"":"s") + "." : "No open qualifying spots to fill.";
   msg.className = "form-msg ok";
   renderQualEntrantsList(t);
+}
+
+/* ---------------- Entry List (with wild cards) ---------------- */
+function renderEntryListBody(t){
+  const container = $("#entry-list-body");
+  container.innerHTML = "";
+
+  const pickerWrap = el("div", {class:"picker-wrap"});
+  pickerWrap.appendChild(el("input", {type:"text", class:"picker-input", "data-entrylist-search":"1", autocomplete:"off", placeholder:"Search player to add to entry list…"}));
+  pickerWrap.appendChild(el("div", {class:"picker-suggestions hidden", "data-entrylist-suggestions":"1"}));
+  container.appendChild(pickerWrap);
+
+  const listWrap = el("div", {style:"margin-top:12px;"});
+  if((t.entryList || []).length === 0){
+    listWrap.appendChild(el("p", {class:"picker-empty-note"}, ["No one on the entry list yet — search above to add players."]));
+  } else {
+    t.entryList
+      .map(entry => ({entry, p: playerById(entry.playerId)}))
+      .filter(x => x.p)
+      .sort((a,b) => a.p.name.localeCompare(b.p.name))
+      .forEach(({entry, p}) => {
+        const row = el("div", {class:"entry-list-row"});
+        row.appendChild(el("span", {class:"entry-list-name", html: playerNameHTML(p)}));
+        const wcGroup = el("div", {class:"entry-list-wc-group"});
+        [["none","Entry"], ["main","Main WC"], ["qual","Q WC"]].forEach(([val, label]) => {
+          const btn = el("button", {
+            type:"button",
+            class:"entry-list-wc-btn" + (entry.wildcard === val ? " active-" + val : ""),
+            "data-entrylist-wc-player": entry.playerId,
+            "data-entrylist-wc-value": val
+          }, [label]);
+          wcGroup.appendChild(btn);
+        });
+        row.appendChild(wcGroup);
+        row.appendChild(el("button", {type:"button", class:"entry-list-remove", "data-entrylist-remove": entry.playerId}, ["\u00d7"]));
+        listWrap.appendChild(row);
+      });
+  }
+  container.appendChild(listWrap);
+}
+
+function handleEntryListSearchInput(e){
+  if(!e.target.matches("[data-entrylist-search]")) return;
+  const t = tournamentById(currentBracketTournamentId);
+  if(!t) return;
+  const query = e.target.value;
+  const suggestionsEl = $('[data-entrylist-suggestions]');
+  if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
+  const existingIds = new Set((t.entryList || []).map(e2 => e2.playerId));
+  const results = state.players
+    .filter(p => !existingIds.has(p.id))
+    .filter(p => matchesSearch(p.name, query))
+    .slice(0, 8);
+  suggestionsEl.innerHTML = results.length
+    ? results.map(p => '<button type="button" class="picker-option" data-entrylist-pick="' + p.id + '">' + playerNameHTML(p) + '</button>').join("")
+    : '<div class="picker-empty">No match</div>';
+  suggestionsEl.classList.remove("hidden");
+}
+
+function handleEntryListClick(e){
+  const t = tournamentById(currentBracketTournamentId);
+  if(!t) return;
+  const pickBtn = e.target.closest("[data-entrylist-pick]");
+  if(pickBtn){
+    const pid = pickBtn.dataset.entrylistPick;
+    if(!t.entryList.some(e2 => e2.playerId === pid)){
+      t.entryList.push({playerId: pid, wildcard: "none"});
+      saveState();
+      renderEntryListBody(t);
+    }
+    return;
+  }
+  const wcBtn = e.target.closest("[data-entrylist-wc-player]");
+  if(wcBtn){
+    const pid = wcBtn.dataset.entrylistWcPlayer;
+    const val = wcBtn.dataset.entrylistWcValue;
+    const entry = t.entryList.find(e2 => e2.playerId === pid);
+    if(entry){
+      entry.wildcard = val;
+      saveState();
+      renderEntryListBody(t);
+    }
+    return;
+  }
+  const rmBtn = e.target.closest("[data-entrylist-remove]");
+  if(rmBtn){
+    const pid = rmBtn.dataset.entrylistRemove;
+    t.entryList = t.entryList.filter(e2 => e2.playerId !== pid);
+    saveState();
+    renderEntryListBody(t);
+  }
+}
+
+// Splits the entry list into main-draw seeds/unseeded and qualifying
+// entrants: wild cards get a guaranteed spot first, then the rest of the
+// direct-acceptance and qualifying cutoffs are set by rank (entry-list
+// date), and finally the main-draw field is seeded using the seeding date.
+function handleProcessEntryList(){
+  const t = tournamentById(currentBracketTournamentId);
+  if(!t) return;
+  const msg = $("#entry-list-msg");
+  msg.className = "form-msg";
+
+  const entryDate = rankingDateFromSelectValue($("#bracket-entry-date").value);
+  const seedDate = rankingDateFromSelectValue($("#bracket-seed-date").value);
+  const numSeeds = numSeedsFor(t.drawSize);
+  const qualEnabled = t.qualifying.enabled;
+  const qualCap = qualEnabled ? t.qualifying.numQualifiers * Math.pow(2, t.qualifying.numRounds) : 0;
+  const directSlots = Math.max(0, t.drawSize - (qualEnabled ? t.qualifying.numQualifiers : 0));
+
+  const mainWCs = t.entryList.filter(e => e.wildcard === "main").map(e => e.playerId);
+  const qualWCs = t.entryList.filter(e => e.wildcard === "qual").map(e => e.playerId);
+  const regular = t.entryList.filter(e => e.wildcard === "none").map(e => e.playerId);
+
+  if(mainWCs.length > directSlots){
+    msg.textContent = "Too many main-draw wild cards (" + mainWCs.length + ") for " + directSlots + " direct slot" + (directSlots===1?"":"s") + ". Remove a few and try again.";
+    return;
+  }
+  if(qualEnabled && qualWCs.length > qualCap){
+    msg.textContent = "Too many qualifying wild cards (" + qualWCs.length + ") for " + qualCap + " qualifying slot" + (qualCap===1?"":"s") + ". Remove a few and try again.";
+    return;
+  }
+
+  const entryRanks = ranksFromTotals(officialRankingsAsOf(entryDate));
+  const regularSorted = regular.slice().sort((a,b) =>
+    (entryRanks[a] || 999999) - (entryRanks[b] || 999999) ||
+    (playerById(a) ? playerById(a).name : "").localeCompare(playerById(b) ? playerById(b).name : ""));
+
+  const mainDirectCount = Math.max(0, directSlots - mainWCs.length);
+  const mainDirect = regularSorted.slice(0, mainDirectCount);
+  const leftover = regularSorted.slice(mainDirectCount);
+
+  const qualDirectCount = qualEnabled ? Math.max(0, qualCap - qualWCs.length) : 0;
+  const qualDirect = qualEnabled ? leftover.slice(0, qualDirectCount) : [];
+  const alternates = qualEnabled ? leftover.slice(qualDirectCount) : leftover;
+
+  const mainField = [...mainWCs, ...mainDirect];
+  const qualField = [...qualWCs, ...qualDirect];
+
+  const seedRanks = ranksFromTotals(officialRankingsAsOf(seedDate));
+  const mainSorted = mainField.slice().sort((a,b) =>
+    (seedRanks[a] || 999999) - (seedRanks[b] || 999999) ||
+    (playerById(a) ? playerById(a).name : "").localeCompare(playerById(b) ? playerById(b).name : ""));
+
+  const newSeeds = mainSorted.slice(0, numSeeds);
+  const newUnseeded = mainSorted.slice(numSeeds);
+
+  t.seeds = new Array(numSeeds).fill(null).map((_, i) => newSeeds[i] || null);
+  t.unseededEntrants = Array.from(new Set(newUnseeded));
+  if(qualEnabled) t.qualifying.entrants = Array.from(new Set(qualField));
+
+  saveState();
+  msg.className = "form-msg ok";
+  msg.textContent = mainWCs.length + " main WC, " + (qualEnabled ? qualWCs.length + " qualifying WC, " : "") +
+    mainDirect.length + " direct into the main draw" + (qualEnabled ? ", " + qualDirect.length + " into qualifying" : "") +
+    (alternates.length ? ", " + alternates.length + " on the entry list didn't make the cut." : ".");
+
+  renderBracketSeedsList(t);
+  renderBracketUnseededList(t);
+  if(qualEnabled) renderQualEntrantsList(t);
+  $("#bracket-numseeds-label").textContent = numSeeds;
 }
 
 function renderBracketSeedGrid(t){
@@ -2051,7 +2223,7 @@ function computeHistoryRecords(){
   const weeksInTop10 = new Map();
   state.players.forEach(p => { weeksAtNo1.set(p.id, 0); weeksInTop10.set(p.id, 0); });
   weeks.forEach(w => {
-    const ranks = ranksFromTotals(computeRankingsAsOf(w));
+    const ranks = ranksFromTotals(officialRankingsAsOf(w));
     Object.keys(ranks).forEach(pid => {
       const r = ranks[pid];
       if(r === 1) weeksAtNo1.set(pid, (weeksAtNo1.get(pid) || 0) + 1);
@@ -2440,6 +2612,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("#bracket-autofill-main").addEventListener("click", handleAutofillMain);
   $("#bracket-autofill-qual").addEventListener("click", handleAutofillQual);
+  $("#entry-list-body").addEventListener("input", handleEntryListSearchInput);
+  $("#entry-list-body").addEventListener("click", handleEntryListClick);
+  $("#entry-list-process").addEventListener("click", handleProcessEntryList);
 
   document.addEventListener("click", (e) => {
     if(!e.target.closest(".picker-wrap")){
