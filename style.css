@@ -122,6 +122,25 @@ main.wrap{padding-top: 32px; padding-bottom: 80px;}
   color: var(--ink-soft);
   margin: -14px 0 18px;
 }
+.mode-toggle{
+  display: flex;
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.mode-btn{
+  font-family:'Oswald', sans-serif;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  background: white;
+  color: var(--ink);
+  border: none;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+.mode-btn + .mode-btn{border-left: 1px solid var(--ink);}
+.mode-btn.active{background: var(--ink); color: var(--paper);}
 
 .empty{
   border: 1px dashed var(--line);
@@ -780,6 +799,60 @@ form textarea{
 }
 .bracket-winner-row{display:flex; gap:4px;}
 .bracket-winner-row .btn{flex:1; font-size:10px; padding:4px 3px;}
+
+/* ---------------- Tournament calendar ---------------- */
+.calendar-scroll{overflow-x: auto;}
+.calendar-table{
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.calendar-table thead th{
+  text-align: left;
+  font-family:'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--ink);
+  background: var(--paper);
+  position: sticky;
+  top: 0;
+}
+.calendar-table td{
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.calendar-table tr.cal-week-start td{border-top: 2px solid var(--ink);}
+.cal-week{
+  font-family:'Oswald', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  background: var(--paper-2);
+}
+.cal-tourney-cell{min-width: 220px;}
+.cal-tourney-name{font-weight: 700; margin-bottom: 4px;}
+.cal-tourney-tags{display: flex; gap: 6px; margin-bottom: 4px;}
+.cal-tourney-meta{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+.cal-tourney-actions{display: flex; gap: 6px; flex-wrap: wrap;}
+.cal-player{margin-bottom: 3px;}
+.cal-player:last-child{margin-bottom: 0;}
+.cal-inprogress{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-style: italic;
+}
 
 /* ---------------- Rankings results breakdown ---------------- */
 .breakdown-row td{padding: 0 !important; border-bottom: 1px solid var(--line);}

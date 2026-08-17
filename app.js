@@ -601,6 +601,7 @@ function renderBreakdownTableHTML(playerId, asOfMs){
 }
 
 let expandedRankingRow = null;
+let rankingsMode = "live"; // "live" | "official"
 
 function renderRankings(){
   populateRankingsYearSelect();
@@ -608,10 +609,15 @@ function renderRankings(){
 
   let totals, movement = null;
   const isRolling = val === "current" || val.startsWith("week:");
+  let effectiveAsOf = null;
   if(isRolling){
-    const asOf = val === "current" ? mondayOf(getLatestActiveDate()) : Number(val.slice(5));
-    totals = computeRankingsAsOf(asOf);
-    const prevTotals = computeRankingsAsOf(asOf - 7 * MS_PER_DAY);
+    const nominalAsOf = val === "current" ? mondayOf(getLatestActiveDate()) : Number(val.slice(5));
+    // Official rankings publish a week behind: a tournament played the week
+    // of the 4th doesn't count until the 11th's rankings, so official mode
+    // just evaluates everything one week earlier than the selected week.
+    effectiveAsOf = rankingsMode === "official" ? nominalAsOf - 7 * MS_PER_DAY : nominalAsOf;
+    totals = computeRankingsAsOf(effectiveAsOf);
+    const prevTotals = computeRankingsAsOf(effectiveAsOf - 7 * MS_PER_DAY);
     movement = {cur: ranksFromTotals(totals), prev: ranksFromTotals(prevTotals)};
   } else if(val === "all"){
     totals = computeRankings(null);
@@ -621,8 +627,13 @@ function renderRankings(){
     totals = computeRankings(null);
   }
 
+  $all("[data-rankings-mode]").forEach(btn => btn.classList.toggle("active", btn.dataset.rankingsMode === rankingsMode));
+  $("#rankings-mode-toggle").classList.toggle("hidden", !isRolling);
+
   $("#rankings-rule-note").textContent = isRolling
-    ? "Only a player's best " + MAX_COUNTED_RESULTS + " results count — except Grand Slam and WATP 1000 results, which always count if played."
+    ? (rankingsMode === "official"
+        ? "Official rankings run a week behind — a tournament only counts once next Monday's rankings publish. Only a player's best " + MAX_COUNTED_RESULTS + " results count, except Grand Slam and WATP 1000 results, which always count if played."
+        : "Live — reflects results as soon as they're entered, including tournaments still in progress this week. Only a player's best " + MAX_COUNTED_RESULTS + " results count, except Grand Slam and WATP 1000 results, which always count if played.")
     : "";
 
   const rows = state.players
@@ -679,8 +690,7 @@ function renderRankings(){
       : "";
     let breakdownRow = "";
     if(isExpanded){
-      const asOf = val === "current" ? mondayOf(getLatestActiveDate()) : Number(val.slice(5));
-      breakdownRow = '<tr class="breakdown-row"><td colspan="6">' + renderBreakdownTableHTML(r.p.id, asOf) + '</td></tr>';
+      breakdownRow = '<tr class="breakdown-row"><td colspan="6">' + renderBreakdownTableHTML(r.p.id, effectiveAsOf) + '</td></tr>';
     }
     return '<tr>' +
       '<td class="rank-col">' + toggleBtn + '<span class="' + rankClass + '">' + rank + '</span></td>' +
@@ -886,6 +896,41 @@ function closePlayerModal(){
 }
 
 /* ---------------- Tournaments view ---------------- */
+// Groups a tournament's results into who reached each stage — used by the
+// season calendar view (champion / runner-up / semifinalists / quarterfinalists).
+function getTournamentResultsByRound(t){
+  const results = computeTournamentResults(t.id);
+  const champion = [], runnerUp = [], semifinalists = [], quarterfinalists = [];
+  results.forEach((res, pid) => {
+    const p = playerById(pid);
+    if(!p) return;
+    if(res.code === "W") champion.push(p);
+    else if(res.code === "F") runnerUp.push(p);
+    else if(res.code === "SF") semifinalists.push(p);
+    else if(res.code === "QF") quarterfinalists.push(p);
+  });
+  return {champion, runnerUp, semifinalists, quarterfinalists};
+}
+
+function playersListHTML(players){
+  if(!players || players.length === 0) return "—";
+  return players.map(p => '<div class="cal-player">' + playerLinkHTML(p) + '</div>').join("");
+}
+
+function tournamentCellHTML(t){
+  return '<div class="cal-tourney-name">' + escapeHtml(t.name) + '</div>' +
+    '<div class="cal-tourney-tags">' +
+      '<span class="level-tag">' + escapeHtml(LEVEL_LABELS[t.level] || t.level) + '</span>' +
+      '<span class="surface-tag surface-' + t.surface + '">' + t.surface + '</span>' +
+    '</div>' +
+    '<div class="cal-tourney-meta">Draw of ' + t.drawSize + '</div>' +
+    '<div class="cal-tourney-actions">' +
+      '<button class="btn btn-small btn-primary" data-open-bracket="' + t.id + '">Bracket</button>' +
+      '<button class="btn btn-small btn-ghost" data-edit-tournament="' + t.id + '">Edit</button>' +
+      '<button class="btn btn-small btn-danger" data-delete-tournament="' + t.id + '">Delete</button>' +
+    '</div>';
+}
+
 function renderTournaments(){
   const list = $("#tournaments-list");
   const empty = $("#tournaments-empty");
@@ -895,38 +940,39 @@ function renderTournaments(){
     return;
   }
   empty.classList.add("hidden");
-  const byYear = new Map();
+
+  const byWeek = new Map();
   state.tournaments.forEach(t => {
-    if(!byYear.has(t.year)) byYear.set(t.year, []);
-    byYear.get(t.year).push(t);
+    const wk = mondayOf(tournamentDateMs(t));
+    if(!byWeek.has(wk)) byWeek.set(wk, []);
+    byWeek.get(wk).push(t);
   });
-  const years = Array.from(byYear.keys()).sort((a,b) => b - a);
-  list.innerHTML = "";
-  years.forEach(year => {
-    const group = el("div", {class:"tourney-year-group"});
-    group.appendChild(el("h3", {}, [String(year) + " Season"]));
-    byYear.get(year)
-      .sort((a,b) => tournamentDateMs(a) - tournamentDateMs(b))
-      .forEach(t => {
-        const results = computeTournamentResults(t.id);
-        let champId = null;
-        results.forEach((res, pid) => { if(res.code === "W") champId = pid; });
-        const champ = champId ? playerById(champId) : null;
-        const row = el("div", {class:"tourney-row"}, [
-          el("span", {class:"level-tag"}, [LEVEL_LABELS[t.level] || t.level]),
-          el("span", {class:"surface-tag surface-" + t.surface}, [t.surface]),
-          el("span", {class:"tourney-name"}, [t.name + (t.startDate ? " — " + t.startDate : "")]),
-          el("span", {class:"tourney-champ"}, champ
-            ? ["Champion: ", el("b", {html: playerLinkHTML(champ)})]
-            : [matchesForTournament(t.id).length ? "In progress" : "No results yet"]),
-          el("button", {class:"btn btn-small btn-primary", "data-open-bracket": t.id}, ["Bracket"]),
-          el("button", {class:"btn btn-small btn-ghost", "data-edit-tournament": t.id}, ["Edit"]),
-          el("button", {class:"btn btn-small btn-danger", "data-delete-tournament": t.id}, ["Delete"])
-        ]);
-        group.appendChild(row);
-      });
-    list.appendChild(group);
+  const weeks = Array.from(byWeek.keys()).sort((a,b) => b - a);
+
+  let html = '<div class="calendar-scroll"><table class="calendar-table"><thead><tr>' +
+    '<th>Week</th><th>Tournament</th><th>Champion</th><th>Runner-up</th><th>Semifinalists</th><th>Quarterfinalists</th>' +
+    '</tr></thead><tbody>';
+
+  weeks.forEach(wk => {
+    const weekTournaments = byWeek.get(wk).sort((a,b) => a.name.localeCompare(b.name));
+    weekTournaments.forEach((t, idx) => {
+      const {champion, runnerUp, semifinalists, quarterfinalists} = getTournamentResultsByRound(t);
+      const played = matchesForTournament(t.id).length > 0;
+      html += '<tr class="' + (idx === 0 ? "cal-week-start" : "") + '">';
+      if(idx === 0){
+        html += '<td class="cal-week" rowspan="' + weekTournaments.length + '">' + formatWeekDate(wk) + '</td>';
+      }
+      html += '<td class="cal-tourney-cell">' + tournamentCellHTML(t) + '</td>';
+      html += '<td>' + (champion.length ? playersListHTML(champion) : (played ? '<span class="cal-inprogress">In progress</span>' : "—")) + '</td>';
+      html += '<td>' + playersListHTML(runnerUp) + '</td>';
+      html += '<td>' + playersListHTML(semifinalists) + '</td>';
+      html += '<td>' + playersListHTML(quarterfinalists) + '</td>';
+      html += '</tr>';
+    });
   });
+
+  html += '</tbody></table></div>';
+  list.innerHTML = html;
 }
 
 /* ---------------- Bracket engine ---------------- */
@@ -2402,6 +2448,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   $("#rankings-search").addEventListener("input", renderRankings);
+  $("#rankings-mode-toggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-rankings-mode]");
+    if(!btn) return;
+    rankingsMode = btn.dataset.rankingsMode;
+    renderRankings();
+  });
 
   $("#history-player").addEventListener("change", renderHistory);
   $("#history-tournament").addEventListener("change", renderHistory);
