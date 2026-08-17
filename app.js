@@ -837,25 +837,26 @@ function shuffleArray(arr){
 // Classic single-elimination seeding order: result[i] is the seed rank that
 // structurally belongs in slot i, guaranteeing seed 1 and 2 can only meet in
 // the final, seeds 1-4 can't meet before the semis, and so on.
-function generateSeedOrderRaw(capacity){
-  let result = [1];
-  while(result.length < capacity){
-    const len = result.length * 2;
-    const next = [];
-    result.forEach(s => { next.push(s); next.push(len + 1 - s); });
-    result = next;
+// Real draw sheets anchor seeds at recursive boundary points: seed 1 at the
+// very top, seed 2 at the very bottom, seeds 3-4 straddling the halfway
+// line, seeds 5-8 straddling the quarter lines, seeds 9-16 the eighth
+// lines, and so on — verified against a real published draw sheet.
+// Returns {potIndex: [1-indexed positions in that pot]}.
+function seedBoundaryPots(cap, nSeeds){
+  const pots = {0:[1], 1:[cap]};
+  let assigned = 2, level = 1;
+  while(assigned < nSeeds){
+    const denom = Math.pow(2, level);
+    const positions = [];
+    for(let k = 1; k < denom; k += 2){
+      const b = cap * k / denom;
+      positions.push(b, b + 1);
+    }
+    pots[level + 1] = positions;
+    assigned += positions.length;
+    level++;
   }
-  return result;
-}
-// Traditional printed draw sheets mirror the bottom half, so seed 1 sits on
-// the very first line and seed 2 on the very last line (not the first line
-// of the bottom half). Reversing the bottom half as a block preserves every
-// pot-separation guarantee — verified numerically for every draw size.
-function generateSeedOrder(capacity){
-  const raw = generateSeedOrderRaw(capacity);
-  const half = capacity / 2;
-  const bottom = raw.slice(half).reverse();
-  return raw.slice(0, half).concat(bottom);
+  return pots;
 }
 
 // Pot groupings: seed 1 alone, seed 2 alone, seeds 3-4, seeds 5-8, seeds 9-16, seeds 17-32...
@@ -871,19 +872,12 @@ function generateDraw(t){
   const cap = capacityOf(t.drawSize);
   const nSeeds = numSeedsFor(t.drawSize);
   const nByes = numByesFor(t.drawSize);
-  const order = generateSeedOrder(cap);
   const slots = new Array(cap).fill(null);
   const rankToSlot = {};
 
-  const potGroups = {};
-  order.forEach((rank, idx) => {
-    if(rank <= nSeeds){
-      const pot = potIndexForRank(rank);
-      (potGroups[pot] = potGroups[pot] || []).push(idx);
-    }
-  });
+  const potGroups = seedBoundaryPots(cap, nSeeds);
   Object.keys(potGroups).forEach(pot => {
-    const slotIdxs = shuffleArray(potGroups[pot]);
+    const slotIdxs = shuffleArray(potGroups[pot].map(p => p - 1)); // 1-indexed -> 0-indexed
     const ranksInPot = [];
     for(let r = 1; r <= nSeeds; r++){ if(potIndexForRank(r) === Number(pot)) ranksInPot.push(r); }
     ranksInPot.forEach((r, i) => {
@@ -1415,40 +1409,66 @@ function handleAddQualifiersToMain(){
   renderBracketRounds(t);
 }
 
-const QUAL_ROW_H = 180;
-function renderQualBracketRounds(t){
-  const wrap = $("#qual-bracket-wrap");
-  wrap.innerHTML = "";
-  const rounds = computeQualifyingBracket(t);
-  const round0Count = Math.max(rounds[0].matches.length, 1);
-  const colHeight = round0Count * QUAL_ROW_H + BRACKET_TITLE_OFFSET;
+const BRACKET_TITLE_OFFSET = 22;
+const BRACKET_ROW_GAP = 5;
 
-  const round0Centers = [];
-  for(let i = 0; i < round0Count; i++) round0Centers.push(i * QUAL_ROW_H + QUAL_ROW_H / 2);
-  const centers = [round0Centers];
-  for(let r = 1; r < rounds.length; r++){
-    const prev = centers[r-1];
-    const cur = [];
-    for(let i = 0; i < prev.length / 2; i++) cur.push((prev[i*2] + prev[i*2+1]) / 2);
-    centers.push(cur);
-  }
+// Lays out a bracket by actually measuring each card's real rendered height
+// (instead of assuming a uniform row height), so a round full of short
+// "played" or "TBD" cards collapses down like a normal results table, and
+// only whichever round is actively being played takes up real space for its
+// score-entry form. Later rounds are centered on the midpoint of their two
+// feeders' *measured* centers, computed round by round left to right.
+function layoutBracketColumns(wrap, rounds, cardBuilder, titleFor){
+  wrap.innerHTML = "";
+  let prevCenters = null;
+  let maxBottom = 0;
+  const cols = [];
 
   rounds.forEach((roundObj, r) => {
     const col = el("div", {class:"bracket-round"});
-    col.style.height = colHeight + "px";
-    col.appendChild(el("div", {class:"bracket-round-title"}, [roundObj.round]));
-    roundObj.matches.forEach((m, i) => {
-      const card = buildQualMatchCard(t, m);
-      const centerY = centers[r][i];
+    col.appendChild(el("div", {class:"bracket-round-title"}, [titleFor(roundObj)]));
+    wrap.appendChild(col);
+    cols.push(col);
+
+    const cardEls = roundObj.matches.map(m => {
+      const card = cardBuilder(m);
       card.style.position = "absolute";
-      card.style.top = (BRACKET_TITLE_OFFSET + centerY - BRACKET_CARD_H / 2) + "px";
       card.style.left = "0";
       card.style.right = "0";
+      card.style.top = "0px";
       card.style.margin = "0";
       col.appendChild(card);
+      return card;
     });
-    wrap.appendChild(col);
+    const heights = cardEls.map(c => c.offsetHeight);
+    const centers = [];
+
+    if(r === 0){
+      let cum = BRACKET_TITLE_OFFSET;
+      heights.forEach((h, i) => {
+        cardEls[i].style.top = cum + "px";
+        centers.push(cum + h / 2);
+        cum += h + BRACKET_ROW_GAP;
+      });
+      maxBottom = Math.max(maxBottom, cum - BRACKET_ROW_GAP);
+    } else {
+      heights.forEach((h, i) => {
+        const c = (prevCenters[i*2] + prevCenters[i*2+1]) / 2;
+        cardEls[i].style.top = (c - h / 2) + "px";
+        centers.push(c);
+        maxBottom = Math.max(maxBottom, c + h / 2);
+      });
+    }
+    prevCenters = centers;
   });
+
+  cols.forEach(col => { col.style.height = maxBottom + "px"; });
+}
+
+function renderQualBracketRounds(t){
+  const wrap = $("#qual-bracket-wrap");
+  const rounds = computeQualifyingBracket(t);
+  layoutBracketColumns(wrap, rounds, (m) => buildQualMatchCard(t, m), (roundObj) => roundObj.round);
 }
 
 function buildQualSlotRow(slot, m){
@@ -1668,52 +1688,12 @@ function handleSeedSelectChange(e){
 
 // Vertical rhythm: every round-0 match occupies one row of this height.
 // Later rounds are centered exactly on the midpoint of their two feeder
-// matches (computed recursively), so columns line up cleanly instead of
-// drifting the way flexbox auto-distribution does once card heights vary.
-// Tall enough to fit the always-visible score-entry form without overlap.
-const BRACKET_ROW_H = 180;
-const BRACKET_TITLE_OFFSET = 26;
-const BRACKET_CARD_H = 82;
-
+// matches, based on each card's real measured height (see
+// layoutBracketColumns), so the bracket is only as tall as it needs to be.
 function renderBracketRounds(t){
   const wrap = $("#bracket-wrap");
-  wrap.innerHTML = "";
   const rounds = computeBracket(t);
-  const round0Count = Math.max(rounds[0].matches.length, 1);
-  const colHeight = round0Count * BRACKET_ROW_H + BRACKET_TITLE_OFFSET;
-
-  const centersByRound = [];
-  for(let i = 0; i < round0Count; i++){
-    centersByRound.push([]);
-  }
-  const round0Centers = [];
-  for(let i = 0; i < round0Count; i++) round0Centers.push(i * BRACKET_ROW_H + BRACKET_ROW_H / 2);
-  const centers = [round0Centers];
-  for(let r = 1; r < rounds.length; r++){
-    const prev = centers[r-1];
-    const cur = [];
-    for(let i = 0; i < prev.length / 2; i++){
-      cur.push((prev[i*2] + prev[i*2+1]) / 2);
-    }
-    centers.push(cur);
-  }
-
-  rounds.forEach((roundObj, r) => {
-    const col = el("div", {class:"bracket-round"});
-    col.style.height = colHeight + "px";
-    col.appendChild(el("div", {class:"bracket-round-title"}, [ROUND_LABELS[roundObj.round] || roundObj.round]));
-    roundObj.matches.forEach((m, i) => {
-      const card = buildBracketMatchCard(t, m);
-      const centerY = centers[r][i];
-      card.style.position = "absolute";
-      card.style.top = (BRACKET_TITLE_OFFSET + centerY - BRACKET_CARD_H / 2) + "px";
-      card.style.left = "0";
-      card.style.right = "0";
-      card.style.margin = "0";
-      col.appendChild(card);
-    });
-    wrap.appendChild(col);
-  });
+  layoutBracketColumns(wrap, rounds, (m) => buildBracketMatchCard(t, m), (roundObj) => ROUND_LABELS[roundObj.round] || roundObj.round);
 }
 
 function buildSlotRow(slot, m, which, t){
