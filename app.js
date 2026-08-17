@@ -1548,8 +1548,9 @@ function buildQualMatchCard(t, m){
   if(m.status === "ready"){
     card.appendChild(buildQualEntryForm(t, m));
   } else if(m.status === "played"){
-    const btn = el("button", {class:"btn btn-small btn-ghost"}, ["Clear Result"]);
-    btn.addEventListener("click", () => {
+    const clearX = el("button", {type:"button", class:"clear-x", title:"Clear result"}, ["\u00d7"]);
+    clearX.addEventListener("click", (e) => {
+      e.stopPropagation();
       if(confirm("Clear this result? Later qualifying rounds built on it will be cleared too.")){
         deleteQualCascade(t, qualRoundNames(t.qualifying.numRounds).indexOf(m.round), m.slotIndex);
         saveState();
@@ -1557,7 +1558,7 @@ function buildQualMatchCard(t, m){
         renderRankings();
       }
     });
-    card.appendChild(el("div", {class:"bracket-match-actions"}, [btn]));
+    card.appendChild(clearX);
   }
   return card;
 }
@@ -1768,8 +1769,9 @@ function buildBracketMatchCard(t, m){
   if(m.status === "ready"){
     card.appendChild(buildBracketEntryForm(t, m));
   } else if(m.status === "played"){
-    const btn = el("button", {class:"btn btn-small btn-ghost"}, ["Clear Result"]);
-    btn.addEventListener("click", () => {
+    const clearX = el("button", {type:"button", class:"clear-x", title:"Clear result"}, ["\u00d7"]);
+    clearX.addEventListener("click", (e) => {
+      e.stopPropagation();
       if(confirm("Clear this result? Later rounds built on it will be cleared too.")){
         deleteCascade(t, bracketRoundNames(capacityOf(t.drawSize)).indexOf(m.round), m.slotIndex);
         saveState();
@@ -1777,7 +1779,7 @@ function buildBracketMatchCard(t, m){
         renderRankings();
       }
     });
-    card.appendChild(el("div", {class:"bracket-match-actions"}, [btn]));
+    card.appendChild(clearX);
   }
   return card;
 }

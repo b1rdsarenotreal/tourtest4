@@ -646,12 +646,34 @@ form textarea{
   margin-bottom: 6px;
 }
 .bracket-match{
+  position: relative;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: white;
   font-size: 12px;
 }
 .bracket-match.status-played{border-color: var(--ink);}
+.clear-x{
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: white;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s, background .12s, color .12s;
+}
+.bracket-match:hover .clear-x{opacity: 1;}
+.clear-x:hover{background: var(--clay); border-color: var(--clay); color: white;}
 .bracket-slot{
   display:flex; align-items:center; justify-content:space-between;
   gap: 6px;
@@ -728,8 +750,6 @@ form textarea{
 .bracket-slot.slot-walkover-target:hover{background: var(--paper-2);}
 .name-link{cursor: pointer;}
 .name-link:hover{text-decoration: underline;}
-.bracket-match-actions{padding: 5px 8px; border-top: 1px dashed var(--line); display:flex; justify-content: space-between; align-items:center;}
-.bracket-match-actions .btn{width:100%;}
 .bracket-match-form{padding: 7px; border-top: 1px dashed var(--line);}
 .bracket-sets-row{display:flex; gap:4px; margin-bottom:5px;}
 .bracket-sets-row .set-box{width: 48px; padding: 3px;}
