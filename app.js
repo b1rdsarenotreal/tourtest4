@@ -16,7 +16,7 @@ const POINTS_TABLE = {
 // Points for coming through qualifying: 0 for early-round exits, a small
 // consolation for going out in the last qualifying round, and a bonus for
 // qualifying into the main draw outright (on top of whatever they then do there).
-const QUALIFYING_POINTS_BASE = {GRAND_SLAM:25, WTA1000:25, WTA500:20, WTA250:12};
+const QUALIFYING_POINTS_BASE = {GRAND_SLAM:25, WTA1000:16, WTA500:8, WTA250:5};
 const QUALIFIER_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 const QUAL_ROUND_OPTIONS = [1, 2, 3];
 
@@ -45,25 +45,24 @@ function countryToISO2(code){
   if(c.length === 3 && COUNTRY_CODE_MAP[c]) return COUNTRY_CODE_MAP[c];
   return null;
 }
-function flagEmoji(code){
+// Image-based flag instead of an emoji character — flag emoji rely on the OS
+// having flag glyphs in its system font, and most Windows browsers don't
+// (you just see the letter code or a blank box there). An actual image looks
+// identical on every platform. flagcdn.com is free, keyless, and widely used.
+function flagImgHTML(code){
   const iso2 = countryToISO2(code);
-  if(!iso2) return null;
-  try{
-    const points = [...iso2].map(ch => 127397 + ch.charCodeAt(0));
-    return String.fromCodePoint(...points);
-  }catch(e){ return null; }
+  if(!iso2) return "";
+  return '<img class="flag-img" src="https://flagcdn.com/' + iso2.toLowerCase() + '.svg" alt="' + iso2 + '" loading="lazy" onerror="this.style.display=\'none\'">';
 }
 // Flag + code, for standalone country display (tables, cards).
 function countryDisplayHTML(code){
   if(!code) return "—";
-  const flag = flagEmoji(code);
-  return (flag ? '<span class="flag">' + flag + '</span>' : "") + escapeHtml(code.toUpperCase());
+  return flagImgHTML(code) + escapeHtml(code.toUpperCase());
 }
 // Flag + name, for use in front of a player's name anywhere it appears.
 function playerNameHTML(player){
   if(!player) return "";
-  const flag = flagEmoji(player.country);
-  return (flag ? '<span class="flag">' + flag + '</span>' : "") + escapeHtml(player.name);
+  return flagImgHTML(player.country) + escapeHtml(player.name);
 }
 // Same, but wrapped so clicking it opens that player's profile anywhere it's used —
 // works via the existing document-level [data-open-player] click delegation.
@@ -2495,8 +2494,8 @@ function openAddPlayer(){ $("#add-player-backdrop").classList.remove("hidden"); 
 function closeAddPlayer(){ $("#add-player-backdrop").classList.add("hidden"); $("#add-player-form").reset(); updateFlagPreview(); }
 function updateFlagPreview(){
   const code = $("#ap-country").value;
-  const flag = flagEmoji(code);
-  $("#ap-flag-preview").textContent = flag ? flag + " " + code.toUpperCase() : (code ? "No flag found for that code" : "");
+  const flag = flagImgHTML(code);
+  $("#ap-flag-preview").innerHTML = flag ? flag + " " + escapeHtml(code.toUpperCase()) : (code ? "No flag found for that code" : "");
 }
 
 function openBulkAdd(){ $("#bulk-add-backdrop").classList.remove("hidden"); $("#ba-textarea").focus(); }
@@ -2576,8 +2575,8 @@ function closeEditPlayer(){
 }
 function updateEditFlagPreview(){
   const code = $("#ep-country").value;
-  const flag = flagEmoji(code);
-  $("#ep-flag-preview").textContent = flag ? flag + " " + code.toUpperCase() : (code ? "No flag found for that code" : "");
+  const flag = flagImgHTML(code);
+  $("#ep-flag-preview").innerHTML = flag ? flag + " " + escapeHtml(code.toUpperCase()) : (code ? "No flag found for that code" : "");
 }
 function handleEditPlayer(ev){
   ev.preventDefault();

@@ -413,7 +413,16 @@ form textarea{
   margin: -10px 0 16px;
   min-height: 24px;
 }
-.flag{margin-right: 5px;}
+.flag-img{
+  width: 18px;
+  height: 13px;
+  object-fit: cover;
+  border-radius: 2px;
+  vertical-align: -2px;
+  margin-right: 5px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+  background: var(--paper-2);
+}
 
 /* Search-to-add player picker, used for bracket seeds and unseeded entrants */
 .picker-wrap{position:relative; flex:1; min-width:0;}
