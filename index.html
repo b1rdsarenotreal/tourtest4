@@ -149,6 +149,18 @@
     <button class="btn btn-ghost back-btn" id="bracket-back">&larr; Back to Tournaments</button>
     <div class="view-head" id="bracket-head"></div>
 
+    <div class="bracket-section-title">
+      <h3>Draw</h3>
+    </div>
+    <div class="bracket-wrap" id="bracket-wrap"></div>
+
+    <div id="qual-draw-top-section" class="hidden">
+      <div class="bracket-section-title">
+        <h3>Qualifying Draw</h3>
+      </div>
+      <div class="bracket-wrap" id="qual-bracket-wrap"></div>
+    </div>
+
     <div class="bracket-section">
       <div class="bracket-section-title">
         <h3>Auto-Fill Field from Rankings</h3>
@@ -183,7 +195,7 @@
 
     <div class="bracket-section" id="qual-config-section">
       <div class="bracket-section-title">
-        <h3>Qualifying Draw</h3>
+        <h3>Qualifying Setup</h3>
       </div>
       <div class="field-row">
         <label class="walkover-check">
@@ -227,9 +239,6 @@
           <span class="form-msg" id="qual-generate-msg"></span>
         </div>
 
-        <div class="bracket-section-title"><h3>Qualifying Bracket</h3></div>
-        <div class="bracket-wrap" id="qual-bracket-wrap"></div>
-
         <div class="form-actions" style="margin-top:8px;">
           <button class="btn btn-primary" id="qual-add-to-main">Add Qualifiers to Main Draw</button>
           <span class="form-msg" id="qual-add-msg"></span>
@@ -265,11 +274,6 @@
       <p class="modal-help">Fine-tune individual slots directly — useful for fixing a single slot without redrawing the whole bracket.</p>
       <div id="bracket-seed-grid" class="bracket-seed-grid hidden"></div>
     </div>
-
-    <div class="bracket-section-title">
-      <h3>Draw</h3>
-    </div>
-    <div class="bracket-wrap" id="bracket-wrap"></div>
   </section>
 
 </main>

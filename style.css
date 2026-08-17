@@ -808,6 +808,17 @@ form textarea{
   margin-right: 4px;
   flex-shrink: 0;
 }
+.wc-badge{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  background: var(--clay);
+  padding: 1px 4px;
+  border-radius: 2px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
 .bracket-slot.slot-empty .slot-name{color: var(--ink-soft); font-style: italic;}
 .bracket-slot.slot-bye .slot-name{color: var(--ink-soft); font-family:'JetBrains Mono', monospace; font-size:11px; text-transform:uppercase;}
 .bracket-slot.slot-winner{background: var(--paper-2); font-weight: 700;}

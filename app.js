@@ -1035,6 +1035,16 @@ function seedNumberForPlayer(t, playerId){
 function isMainDrawQualifier(t, playerId){
   return (t.qualifierIds || []).includes(playerId);
 }
+// Wild-card status comes from the entry list, independent of where the
+// player actually ended up (seeded or not) — real draws can and do have a
+// seeded wild card, so this always stacks alongside a seed badge rather than
+// replacing it.
+function isMainDrawWildCard(t, playerId){
+  return (t.entryList || []).some(e => e.playerId === playerId && e.wildcard === "main");
+}
+function isQualifyingWildCard(t, playerId){
+  return (t.entryList || []).some(e => e.playerId === playerId && e.wildcard === "qual");
+}
 
 function shuffleArray(arr){
   const a = arr.slice();
@@ -1324,6 +1334,7 @@ function renderQualifyingConfig(t){
   $("#qual-numqualifiers").value = String(q.numQualifiers);
   $("#qual-numrounds").value = String(q.numRounds);
   $("#qual-body").classList.toggle("hidden", !q.enabled);
+  $("#qual-draw-top-section").classList.toggle("hidden", !q.enabled);
   if(q.enabled){
     renderQualEntrantsList(t);
     renderQualBracketRounds(t);
@@ -1723,7 +1734,9 @@ function buildQualSlotRow(t, slot, m){
   let nameHTML, extraClass = "";
   if(slot.type === "player"){
     const p = playerById(slot.playerId);
-    nameHTML = p ? (m.status === "ready" ? playerNameHTML(p) : playerLinkHTML(p)) : "(removed player)";
+    const isWC = isQualifyingWildCard(t, slot.playerId);
+    const badges = isWC ? '<span class="wc-badge">WC</span>' : "";
+    nameHTML = badges + (p ? (m.status === "ready" ? playerNameHTML(p) : playerLinkHTML(p)) : "(removed player)");
   } else {
     nameHTML = "TBD"; extraClass = " slot-empty";
   }
@@ -2098,8 +2111,10 @@ function buildSlotRow(slot, m, which, t){
   if(slot.type === "player"){
     const p = playerById(slot.playerId);
     const seedNum = t ? seedNumberForPlayer(t, slot.playerId) : null;
+    const isWC = t ? isMainDrawWildCard(t, slot.playerId) : false;
     const isQ = t ? isMainDrawQualifier(t, slot.playerId) : false;
     const badges = (seedNum ? '<span class="seed-badge">' + seedNum + '</span>' : "") +
+      (isWC ? '<span class="wc-badge">WC</span>' : "") +
       (isQ ? '<span class="qual-badge">Q</span>' : "");
     // Ready matches: clicking a name awards that player the win by walkover.
     // Everything else: clicking a name opens their profile.
