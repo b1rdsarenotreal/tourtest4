@@ -1538,25 +1538,25 @@ function buildQualEntryForm(t, m){
 
   const errMsg = el("div", {class:"form-msg"}, []);
 
-  const winnerRow = el("div", {class:"bracket-winner-row"});
+  // Normal path: enter the score, the winner is read off who took 2 of 3 sets.
+  const saveBtn = el("button", {type:"button", class:"btn btn-small btn-primary", style:"width:100%;"}, ["Save Result"]);
+  // Walkover path: there's no score to read a winner from, so it's picked directly.
+  const walkoverChoiceRow = el("div", {class:"bracket-winner-row hidden"});
   const btnA = el("button", {type:"button", class:"btn btn-small"}, [pA ? pA.name + " won" : "A won"]);
   const btnB = el("button", {type:"button", class:"btn btn-small"}, [pB ? pB.name + " won" : "B won"]);
-  winnerRow.appendChild(btnA); winnerRow.appendChild(btnB);
-  form.appendChild(winnerRow);
+  walkoverChoiceRow.appendChild(btnA); walkoverChoiceRow.appendChild(btnB);
+
+  form.appendChild(saveBtn);
+  form.appendChild(walkoverChoiceRow);
   form.appendChild(errMsg);
 
-  function trySave(winnerPlayerId){
+  walkoverCheck.addEventListener("change", () => {
+    saveBtn.classList.toggle("hidden", walkoverCheck.checked);
+    walkoverChoiceRow.classList.toggle("hidden", !walkoverCheck.checked);
     errMsg.textContent = "";
-    let sets = [];
-    if(!walkoverCheck.checked){
-      for(const pair of setInputs){
-        const av = pair.a.value, bv = pair.b.value;
-        if(av === "" && bv === "") continue;
-        if(av === "" || bv === ""){ errMsg.textContent = "Finish that set or leave it blank."; return; }
-        sets.push({a: Number(av), b: Number(bv)});
-      }
-      if(sets.length === 0){ errMsg.textContent = "Enter at least one set, or tick walkover."; return; }
-    }
+  });
+
+  function persist(winnerPlayerId, sets){
     state.matches.push({
       id: uid("m"),
       tournamentId: t.id,
@@ -1575,8 +1575,26 @@ function buildQualEntryForm(t, m){
     renderRankings();
   }
 
-  btnA.addEventListener("click", () => { if(pA) trySave(pA.id); });
-  btnB.addEventListener("click", () => { if(pB) trySave(pB.id); });
+  saveBtn.addEventListener("click", () => {
+    errMsg.textContent = "";
+    let sets = [];
+    for(const pair of setInputs){
+      const av = pair.a.value, bv = pair.b.value;
+      if(av === "" && bv === "") continue;
+      if(av === "" || bv === ""){ errMsg.textContent = "Finish that set or leave it blank."; return; }
+      const an = Number(av), bn = Number(bv);
+      if(an === bn){ errMsg.textContent = "A set can't end in a tie."; return; }
+      sets.push({a: an, b: bn});
+    }
+    if(sets.length === 0){ errMsg.textContent = "Enter at least one set, or tick walkover."; return; }
+    let aSets = 0, bSets = 0;
+    sets.forEach(s => { if(s.a > s.b) aSets++; else bSets++; });
+    if(aSets === bSets){ errMsg.textContent = "Sets are tied " + aSets + "-" + bSets + " — add one more to decide the match."; return; }
+    persist(aSets > bSets ? m.slotA.playerId : m.slotB.playerId, sets);
+  });
+
+  btnA.addEventListener("click", () => { if(pA) persist(pA.id, []); });
+  btnB.addEventListener("click", () => { if(pB) persist(pB.id, []); });
 
   return form;
 }
@@ -1769,25 +1787,25 @@ function buildBracketEntryForm(t, m){
 
   const errMsg = el("div", {class:"form-msg"}, []);
 
-  const winnerRow = el("div", {class:"bracket-winner-row"});
+  // Normal path: enter the score, the winner is read off who took 2 of 3 sets.
+  const saveBtn = el("button", {type:"button", class:"btn btn-small btn-primary", style:"width:100%;"}, ["Save Result"]);
+  // Walkover path: there's no score to read a winner from, so it's picked directly.
+  const walkoverChoiceRow = el("div", {class:"bracket-winner-row hidden"});
   const btnA = el("button", {type:"button", class:"btn btn-small btn-primary"}, [pA ? pA.name + " won" : "A won"]);
   const btnB = el("button", {type:"button", class:"btn btn-small btn-primary"}, [pB ? pB.name + " won" : "B won"]);
-  winnerRow.appendChild(btnA); winnerRow.appendChild(btnB);
-  form.appendChild(winnerRow);
+  walkoverChoiceRow.appendChild(btnA); walkoverChoiceRow.appendChild(btnB);
+
+  form.appendChild(saveBtn);
+  form.appendChild(walkoverChoiceRow);
   form.appendChild(errMsg);
 
-  function trySave(winnerPlayerId){
+  walkoverCheck.addEventListener("change", () => {
+    saveBtn.classList.toggle("hidden", walkoverCheck.checked);
+    walkoverChoiceRow.classList.toggle("hidden", !walkoverCheck.checked);
     errMsg.textContent = "";
-    let sets = [];
-    if(!walkoverCheck.checked){
-      for(const pair of setInputs){
-        const av = pair.a.value, bv = pair.b.value;
-        if(av === "" && bv === "") continue;
-        if(av === "" || bv === ""){ errMsg.textContent = "Finish that set or leave it blank."; return; }
-        sets.push({a: Number(av), b: Number(bv)});
-      }
-      if(sets.length === 0){ errMsg.textContent = "Enter at least one set, or tick walkover."; return; }
-    }
+  });
+
+  function persist(winnerPlayerId, sets){
     state.matches.push({
       id: uid("m"),
       tournamentId: t.id,
@@ -1806,8 +1824,26 @@ function buildBracketEntryForm(t, m){
     renderRankings();
   }
 
-  btnA.addEventListener("click", () => { if(pA) trySave(pA.id); });
-  btnB.addEventListener("click", () => { if(pB) trySave(pB.id); });
+  saveBtn.addEventListener("click", () => {
+    errMsg.textContent = "";
+    let sets = [];
+    for(const pair of setInputs){
+      const av = pair.a.value, bv = pair.b.value;
+      if(av === "" && bv === "") continue;
+      if(av === "" || bv === ""){ errMsg.textContent = "Finish that set or leave it blank."; return; }
+      const an = Number(av), bn = Number(bv);
+      if(an === bn){ errMsg.textContent = "A set can't end in a tie."; return; }
+      sets.push({a: an, b: bn});
+    }
+    if(sets.length === 0){ errMsg.textContent = "Enter at least one set, or tick walkover."; return; }
+    let aSets = 0, bSets = 0;
+    sets.forEach(s => { if(s.a > s.b) aSets++; else bSets++; });
+    if(aSets === bSets){ errMsg.textContent = "Sets are tied " + aSets + "-" + bSets + " — add one more to decide the match."; return; }
+    persist(aSets > bSets ? m.slotA.playerId : m.slotB.playerId, sets);
+  });
+
+  btnA.addEventListener("click", () => { if(pA) persist(pA.id, []); });
+  btnB.addEventListener("click", () => { if(pB) persist(pB.id, []); });
 
   return form;
 }
