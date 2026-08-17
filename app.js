@@ -5,6 +5,7 @@
 const STORAGE_KEY = "fortnight-wta-state-v1";
 const ROUND_ORDER = ["R128","R64","R32","R16","QF","SF","F"];
 const ROUND_LABELS = {R128:"R128", R64:"R64", R32:"R32", R16:"R16", QF:"QF", SF:"SF", F:"F", Q1:"Q1", Q2:"Q2", Q3:"Q3"};
+const FRIENDLY_ROUND_NAMES = {R128:"Round of 128", R64:"Round of 64", R32:"Round of 32", R16:"Round of 16", QF:"Quarterfinals", SF:"Semifinals", F:"Final"};
 const LEVEL_LABELS = {GRAND_SLAM:"Grand Slam", WTA1000:"WATP 1000", WTA500:"WATP 500", WTA250:"WATP 250"};
 const POINTS_TABLE = {
   GRAND_SLAM: {R128:10, R64:70,  R32:130, R16:240, QF:430, SF:780, F:1300, W:2000},
@@ -1670,6 +1671,8 @@ function handleAddQualifiersToMain(){
 
 const BRACKET_TITLE_OFFSET = 22;
 const BRACKET_ROW_GAP = 5;
+const SECTION_SIZE = 8; // matches per section (16 players) in the first round
+const SECTION_LABEL_H = 24;
 
 // Lays out a bracket by actually measuring each card's real rendered height
 // (instead of assuming a uniform row height), so a round full of short
@@ -1703,8 +1706,24 @@ function layoutBracketColumns(wrap, rounds, cardBuilder, titleFor){
     const centers = [];
 
     if(r === 0){
+      // A first round with more than one section's worth of matches gets a
+      // "Section N" label every 16 players (8 matches), purely as a visual
+      // wayfinding aid — the underlying centering math is untouched, later
+      // rounds just follow whatever centers this produces, same as always.
+      const showSections = roundObj.matches.length > SECTION_SIZE;
       let cum = BRACKET_TITLE_OFFSET;
+      let sectionNum = 0;
       heights.forEach((h, i) => {
+        if(showSections && i % SECTION_SIZE === 0){
+          sectionNum++;
+          const label = el("div", {class:"bracket-section-label"}, ["Section " + sectionNum]);
+          label.style.position = "absolute";
+          label.style.top = cum + "px";
+          label.style.left = "0";
+          label.style.right = "0";
+          col.appendChild(label);
+          cum += SECTION_LABEL_H;
+        }
         cardEls[i].style.top = cum + "px";
         centers.push(cum + h / 2);
         cum += h + BRACKET_ROW_GAP;
@@ -2100,10 +2119,111 @@ function handleSeedSelectChange(e){
 // Later rounds are centered exactly on the midpoint of their two feeder
 // matches, based on each card's real measured height (see
 // layoutBracketColumns), so the bracket is only as tall as it needs to be.
+// A 16-player group always resolves to one winner in exactly 4 rounds
+// (log2(16) = 4) — that's what makes "sections" work at any draw size.
+const SECTION_INTERNAL_ROUNDS = 4;
+
+// Vertical rhythm: every round-0 match occupies one row of this height.
+// Later rounds are centered exactly on the midpoint of their two feeder
+// matches, based on each card's real measured height (see
+// layoutBracketColumns), so the bracket is only as tall as it needs to be.
+//
+// Draws bigger than 32 get split the way a real published draw sheet does:
+// each 16-player group ("Section") plays out its own first/second/third
+// round and quarterfinal-equivalent independently, and a separate "Finals"
+// block up top re-shows that same last round alongside the semis and final
+// as the unified business end — rather than one enormous continuous row of
+// columns.
 function renderBracketRounds(t){
-  const wrap = $("#bracket-wrap");
+  const container = $("#bracket-draw-container");
+  container.innerHTML = "";
   const rounds = computeBracket(t);
-  layoutBracketColumns(wrap, rounds, (m) => buildBracketMatchCard(t, m), (roundObj) => ROUND_LABELS[roundObj.round] || roundObj.round);
+  const round0Count = rounds[0].matches.length;
+  const cap = capacityOf(t.drawSize);
+  const cardBuilder = (m) => buildBracketMatchCard(t, m);
+
+  // Sectioning only kicks in for draws bigger than 32 — a 32-draw (16
+  // first-round matches, 2 sections) stays as one simple continuous view.
+  if(cap <= 32){
+    container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, ["Draw"])]));
+    const wrap = el("div", {class:"bracket-wrap"});
+    container.appendChild(wrap);
+    layoutBracketColumns(wrap, rounds, cardBuilder, (roundObj) => ROUND_LABELS[roundObj.round] || roundObj.round);
+    renderSeedIndex(t);
+    return;
+  }
+
+  const numSections = round0Count / SECTION_SIZE;
+
+  // "Finals" — the combined view from the section-final round onward.
+  const combinedRounds = rounds.slice(SECTION_INTERNAL_ROUNDS - 1);
+  container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, ["Finals"])]));
+  const finalsWrap = el("div", {class:"bracket-wrap"});
+  container.appendChild(finalsWrap);
+  layoutBracketColumns(finalsWrap, combinedRounds, cardBuilder, (roundObj) => FRIENDLY_ROUND_NAMES[roundObj.round] || roundObj.round);
+
+  // Sections, grouped into "Top half" / "Bottom half" once there are enough
+  // of them that the grouping actually helps (4+ sections, i.e. 64+ draws).
+  const groupIntoHalves = numSections >= 4;
+  const sectionsPerHalf = groupIntoHalves ? numSections / 2 : numSections;
+  const halfLabels = ["Top half", "Bottom half"];
+
+  for(let half = 0; half < (groupIntoHalves ? 2 : 1); half++){
+    if(groupIntoHalves){
+      container.appendChild(el("h2", {class:"bracket-half-heading"}, [halfLabels[half]]));
+    }
+    for(let localSec = 0; localSec < sectionsPerHalf; localSec++){
+      const sectionIndex = half * sectionsPerHalf + localSec;
+      const sectionRoundsData = [];
+      for(let r = 0; r < SECTION_INTERNAL_ROUNDS; r++){
+        const matchesPerSection = SECTION_SIZE / Math.pow(2, r);
+        const start = sectionIndex * matchesPerSection;
+        sectionRoundsData.push({
+          round: rounds[r].round,
+          matches: rounds[r].matches.slice(start, start + matchesPerSection)
+        });
+      }
+      container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, ["Section " + (sectionIndex + 1)])]));
+      const sectionWrap = el("div", {class:"bracket-wrap"});
+      container.appendChild(sectionWrap);
+      layoutBracketColumns(sectionWrap, sectionRoundsData, cardBuilder, (roundObj, idx) => {
+        const posInSection = sectionRoundsData.indexOf(roundObj);
+        if(posInSection < 3) return ["First Round", "Second Round", "Third Round"][posInSection];
+        return FRIENDLY_ROUND_NAMES[roundObj.round] || roundObj.round;
+      });
+    }
+  }
+
+  renderSeedIndex(t);
+}
+
+// A two-column seed sheet above the draw (seeds 1..N/2 on the left, the rest
+// on the right — CSS multi-column layout does this split automatically since
+// every row is the same height). Each seed fades out once they're eliminated.
+function renderSeedIndex(t){
+  const container = $("#seed-index");
+  if(!container) return;
+  const numSeeds = numSeedsFor(t.drawSize);
+  const results = computeTournamentResults(t.id);
+  let html = "";
+  for(let i = 0; i < numSeeds; i++){
+    const pid = t.seeds[i];
+    const p = pid ? playerById(pid) : null;
+    let statusHTML = "", eliminated = false;
+    if(p){
+      const res = results.get(pid);
+      if(res){
+        if(res.code === "W"){ statusHTML = '<span class="seed-status champ">champion</span>'; }
+        else { statusHTML = '<span class="seed-status">lost ' + (ROUND_LABELS[res.code] || res.code) + '</span>'; eliminated = true; }
+      }
+    }
+    html += '<div class="seed-index-row' + (eliminated ? " seed-eliminated" : "") + '">' +
+      '<span class="seed-index-num">' + (i + 1) + '.</span>' +
+      '<span class="seed-index-name">' + (p ? playerLinkHTML(p) : '<span class="seed-index-empty">—</span>') + '</span>' +
+      (statusHTML ? '<span class="seed-index-status">' + statusHTML + '</span>' : "") +
+      '</div>';
+  }
+  container.innerHTML = html || '<p class="picker-empty-note">No seeds assigned yet.</p>';
 }
 
 function buildSlotRow(slot, m, which, t){

@@ -661,6 +661,16 @@ form textarea{
   margin: 24px 0 10px;
 }
 .bracket-section-title h3{font-size: 16px;}
+.bracket-half-heading{
+  font-family:'Oswald', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 22px;
+  color: var(--ink);
+  border-bottom: 3px solid var(--ink);
+  padding-bottom: 8px;
+  margin: 36px 0 6px;
+}
 .bracket-seed-grid{
   display:grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -709,6 +719,16 @@ form textarea{
   color: var(--ink-soft);
   text-align: center;
   margin-bottom: 6px;
+}
+.bracket-section-label{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  font-weight: 700;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 3px;
 }
 .bracket-match{
   position: relative;
@@ -840,6 +860,41 @@ form textarea{
 }
 .bracket-winner-row{display:flex; gap:4px;}
 .bracket-winner-row .btn{flex:1; font-size:10px; padding:4px 3px;}
+
+/* ---------------- Seed index ---------------- */
+.seed-index-grid{
+  columns: 2;
+  column-gap: 32px;
+  margin-bottom: 26px;
+}
+.seed-index-row{
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  break-inside: avoid;
+  font-size: 13px;
+  transition: opacity .15s;
+}
+.seed-index-num{
+  font-family:'Oswald', sans-serif;
+  font-weight: 600;
+  width: 22px;
+  flex-shrink: 0;
+  color: var(--ink-soft);
+  text-align: right;
+}
+.seed-index-name{flex: 1; min-width: 0;}
+.seed-index-status{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-style: italic;
+  flex-shrink: 0;
+}
+.seed-status.champ{color: var(--grass); font-weight: 700; font-style: normal;}
+.seed-index-row.seed-eliminated{opacity: 0.5;}
+.seed-index-empty{color: var(--ink-soft); font-style: italic;}
 
 /* ---------------- Tournament calendar ---------------- */
 .calendar-scroll{overflow-x: auto;}
