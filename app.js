@@ -287,33 +287,67 @@ function tournamentDateMs(t){
   return new Date(t.year || 2000, 0, 1).getTime();
 }
 
+// Real tours only count a capped number of a player's best results toward
+// their ranking, except the top-tier events, which count no matter what if
+// the player entered them — this mirrors that rule.
+const MAX_COUNTED_RESULTS = 18;
+const MANDATORY_LEVELS = new Set(["GRAND_SLAM", "WTA1000"]);
+
 // Real tours publish rankings weekly as a rolling 52-week points total.
 // This mirrors that: sum results from tournaments whose date falls in the
-// 364 days up to and including asOfMs.
+// 364 days up to and including asOfMs, then apply the best-18-plus-mandatory
+// counting rule per player.
 function computeRankingsAsOf(asOfMs){
   const windowStart = asOfMs - 364 * MS_PER_DAY;
   const totals = new Map();
-  state.players.forEach(p => totals.set(p.id, {points:0, titles:0}));
+  const perPlayerResults = new Map(); // playerId -> [{points, mandatory}]
+  state.players.forEach(p => {
+    totals.set(p.id, {points:0, titles:0});
+    perPlayerResults.set(p.id, []);
+  });
+
   state.tournaments.forEach(t => {
     const d = tournamentDateMs(t);
     if(d > asOfMs || d < windowStart) return;
+    const mandatory = MANDATORY_LEVELS.has(t.level);
+
     const results = computeTournamentResults(t.id);
     results.forEach((res, pid) => {
       const entry = totals.get(pid);
       if(!entry) return;
-      entry.points += pointsForResult(t.level, res.code);
       if(res.code === "W") entry.titles += 1;
+      perPlayerResults.get(pid).push({points: pointsForResult(t.level, res.code), mandatory});
     });
+
     if(t.qualifying && t.qualifying.enabled){
       const qresults = computeQualifyingResults(t);
       qresults.forEach((res, pid) => {
-        const entry = totals.get(pid);
-        if(!entry) return;
-        entry.points += qualifyingPointsForResult(t.level, res.code, t.qualifying.numRounds);
+        if(!perPlayerResults.has(pid)) return;
+        const pts = qualifyingPointsForResult(t.level, res.code, t.qualifying.numRounds);
+        if(pts > 0) perPlayerResults.get(pid).push({points: pts, mandatory: false});
       });
     }
   });
+
+  perPlayerResults.forEach((results, pid) => {
+    const entry = totals.get(pid);
+    if(!entry) return;
+    entry.points = sumCountedResults(results);
+  });
+
   return totals;
+}
+
+// The actual counting rule: every mandatory result counts no matter how
+// many there are, then the best remaining (non-mandatory) results fill out
+// the rest of the cap.
+function sumCountedResults(results){
+  const mandatory = results.filter(r => r.mandatory);
+  const optional = results.filter(r => !r.mandatory).sort((a,b) => b.points - a.points);
+  const mandatorySum = mandatory.reduce((s, r) => s + r.points, 0);
+  const remainingSlots = Math.max(0, MAX_COUNTED_RESULTS - mandatory.length);
+  const optionalSum = optional.slice(0, remainingSlots).reduce((s, r) => s + r.points, 0);
+  return mandatorySum + optionalSum;
 }
 
 // The most recent date with any recorded result — stands in for "today" on the tour calendar.
@@ -467,12 +501,114 @@ function populateRankingsYearSelect(){
   }
 }
 
+// Which of a player's counted-window results actually count under the
+// best-18-plus-mandatory rule, kept per-tournament so we can show a real
+// breakdown (not just the final total).
+function computePlayerResultBreakdown(playerId, asOfMs){
+  const windowStart = asOfMs - 364 * MS_PER_DAY;
+  const entries = [];
+  state.tournaments.forEach(t => {
+    const d = tournamentDateMs(t);
+    if(d > asOfMs || d < windowStart) return;
+    const mandatory = MANDATORY_LEVELS.has(t.level);
+
+    const res = computeTournamentResults(t.id).get(playerId);
+    if(res){
+      entries.push({
+        tournamentId: t.id, tournamentName: t.name, level: t.level, date: d,
+        code: res.code, label: res.label, points: pointsForResult(t.level, res.code),
+        mandatory, isQualifying: false
+      });
+    }
+    if(t.qualifying && t.qualifying.enabled){
+      const qres = computeQualifyingResults(t).get(playerId);
+      if(qres){
+        const pts = qualifyingPointsForResult(t.level, qres.code, t.qualifying.numRounds);
+        entries.push({
+          tournamentId: t.id, tournamentName: t.name + " (Q)", level: t.level, date: d,
+          code: qres.code, label: qres.label, points: pts,
+          mandatory: false, isQualifying: true
+        });
+      }
+    }
+  });
+  entries.sort((a,b) => a.date - b.date);
+
+  const mandatoryEntries = entries.filter(e => e.mandatory);
+  const optionalEntries = entries.filter(e => !e.mandatory);
+  const optionalSortedDesc = optionalEntries.slice().sort((a,b) => b.points - a.points);
+  const remainingSlots = Math.max(0, MAX_COUNTED_RESULTS - mandatoryEntries.length);
+  const countedOptional = new Set(optionalSortedDesc.slice(0, remainingSlots));
+  entries.forEach(e => { e.counted = e.mandatory || countedOptional.has(e); });
+
+  const totalPoints = entries.filter(e => e.counted).reduce((s, e) => s + e.points, 0);
+  return {entries, totalPoints, tournamentsPlayed: entries.length};
+}
+
+// "Palmwood Open" -> "PO", "Wimbledon" -> "WIM" — short column headers,
+// same spirit as AO/FO/W/USO on a real ranking breakdown table.
+function abbreviateTournamentName(name){
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if(words.length >= 2) return words.map(w => w[0]).join("").toUpperCase().slice(0, 4);
+  return (words[0] || "").slice(0, 3).toUpperCase();
+}
+
+function resultColorClass(entry){
+  if(entry.isQualifying) return "res-qual";
+  if(entry.code === "W") return "res-win";
+  if(entry.code === "F") return "res-final";
+  if(entry.code === "SF") return "res-semi";
+  if(entry.code === "QF") return "res-quarter";
+  return "res-early";
+}
+
+function renderBreakdownTableHTML(playerId, asOfMs){
+  const {entries, totalPoints} = computePlayerResultBreakdown(playerId, asOfMs);
+  if(entries.length === 0){
+    return '<p class="picker-empty-note">No results in this window yet.</p>';
+  }
+  const levels = ["GRAND_SLAM", "WTA1000", "WTA500", "WTA250"];
+  const byLevel = {};
+  levels.forEach(l => { byLevel[l] = entries.filter(e => e.level === l); });
+
+  let headTop = "", headSub = "";
+  levels.forEach(l => {
+    const list = byLevel[l];
+    if(list.length === 0) return;
+    headTop += '<th colspan="' + list.length + '" class="breakdown-group-head">' + LEVEL_LABELS[l] + '</th>';
+    list.forEach(e => {
+      headSub += '<th title="' + escapeHtml(e.tournamentName) + '">' + escapeHtml(abbreviateTournamentName(e.tournamentName)) + '</th>';
+    });
+  });
+
+  let bodyCells = "";
+  levels.forEach(l => {
+    byLevel[l].forEach(e => {
+      const roundLabel = e.code === "W" ? "W" : (e.isQualifying ? e.code : e.code);
+      const cls = "breakdown-cell " + resultColorClass(e) + (e.counted ? "" : " not-counted");
+      const titleAttr = e.counted ? "Counts toward ranking" : "Didn't count — outside the best " + MAX_COUNTED_RESULTS;
+      bodyCells += '<td class="' + cls + '" title="' + titleAttr + '">' + escapeHtml(roundLabel) + '<span class="breakdown-pts">' + e.points + '</span></td>';
+    });
+  });
+
+  return '<div class="breakdown-scroll"><table class="breakdown-table"><thead>' +
+    '<tr>' + headTop + '<th rowspan="2">Total</th><th rowspan="2">Tours</th></tr>' +
+    '<tr>' + headSub + '</tr>' +
+    '</thead><tbody><tr>' + bodyCells +
+    '<td class="breakdown-total">' + totalPoints.toLocaleString() + '</td>' +
+    '<td class="breakdown-total">' + entries.length + '</td>' +
+    '</tr></tbody></table></div>';
+}
+
+let expandedRankingRow = null;
+
 function renderRankings(){
   populateRankingsYearSelect();
   const val = $("#rankings-year").value || "current";
 
   let totals, movement = null;
-  if(val === "current" || val.startsWith("week:")){
+  const isRolling = val === "current" || val.startsWith("week:");
+  if(isRolling){
     const asOf = val === "current" ? mondayOf(getLatestActiveDate()) : Number(val.slice(5));
     totals = computeRankingsAsOf(asOf);
     const prevTotals = computeRankingsAsOf(asOf - 7 * MS_PER_DAY);
@@ -484,6 +620,10 @@ function renderRankings(){
   } else {
     totals = computeRankings(null);
   }
+
+  $("#rankings-rule-note").textContent = isRolling
+    ? "Only a player's best " + MAX_COUNTED_RESULTS + " results count — except Grand Slam and WATP 1000 results, which always count if played."
+    : "";
 
   const rows = state.players
     .map(p => ({p, stats: totals.get(p.id) || {points:0, titles:0}}))
@@ -533,14 +673,23 @@ function renderRankings(){
       }
       moveCell = '<td>' + moveHTML + '</td>';
     }
+    const isExpanded = isRolling && expandedRankingRow === r.p.id;
+    const toggleBtn = isRolling
+      ? '<button class="rank-toggle' + (isExpanded ? ' open' : '') + '" data-toggle-breakdown="' + r.p.id + '" title="Show results breakdown">&#9656;</button>'
+      : "";
+    let breakdownRow = "";
+    if(isExpanded){
+      const asOf = val === "current" ? mondayOf(getLatestActiveDate()) : Number(val.slice(5));
+      breakdownRow = '<tr class="breakdown-row"><td colspan="6">' + renderBreakdownTableHTML(r.p.id, asOf) + '</td></tr>';
+    }
     return '<tr>' +
-      '<td class="rank-col"><span class="' + rankClass + '">' + rank + '</span></td>' +
+      '<td class="rank-col">' + toggleBtn + '<span class="' + rankClass + '">' + rank + '</span></td>' +
       moveCell +
       '<td><button class="player-link" data-open-player="' + r.p.id + '">' + escapeHtml(r.p.name) + '</button></td>' +
       '<td class="country-chip">' + countryDisplayHTML(r.p.country) + '</td>' +
       '<td>' + r.stats.titles + '</td>' +
       '<td class="points-cell">' + r.stats.points.toLocaleString() + '</td>' +
-      '</tr>';
+      '</tr>' + breakdownRow;
   }).join("");
 }
 
@@ -2260,6 +2409,13 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#player-modal-backdrop").addEventListener("click", (e) => { if(e.target.id === "player-modal-backdrop") closePlayerModal(); });
 
   document.addEventListener("click", (e) => {
+    const toggleBtn = e.target.closest("[data-toggle-breakdown]");
+    if(toggleBtn){
+      const pid = toggleBtn.dataset.toggleBreakdown;
+      expandedRankingRow = expandedRankingRow === pid ? null : pid;
+      renderRankings();
+      return;
+    }
     const editBtn = e.target.closest("[data-edit-player]");
     if(editBtn){ openEditPlayer(editBtn.dataset.editPlayer); return; }
     const openBtn = e.target.closest("[data-open-player]");
