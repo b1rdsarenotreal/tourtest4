@@ -87,7 +87,10 @@
   <section class="view hidden" id="view-tournaments">
     <div class="view-head">
       <h2>Tournaments</h2>
-      <button class="btn btn-primary" id="open-add-tournament">+ Add Tournament</button>
+      <div class="controls">
+        <button class="btn btn-ghost" id="open-add-bye-week">+ Add Bye Week</button>
+        <button class="btn btn-primary" id="open-add-tournament">+ Add Tournament</button>
+      </div>
     </div>
     <div id="tournaments-empty" class="empty hidden">
       <p>No events scheduled.</p>
@@ -438,6 +441,26 @@
       <div class="form-actions">
         <button type="button" class="btn btn-ghost" id="et-cancel">Cancel</button>
         <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Add bye week modal -->
+<div class="modal-backdrop hidden" id="add-byeweek-backdrop">
+  <div class="modal">
+    <form id="add-byeweek-form">
+      <h3>Add Bye Week</h3>
+      <p class="modal-help">Marks a week where no tournament is played. Rankings still "publish" for that week — old results keep aging out of the 52-week window, and the week becomes selectable for seeding a future draw — just nothing new gets added.</p>
+      <label>Week (any date in it)
+        <input type="date" id="bw-date" required>
+      </label>
+      <label>Note <span style="text-transform:none; font-weight:400;">(optional)</span>
+        <input type="text" id="bw-note" maxlength="60" placeholder="e.g. Off week before the majors">
+      </label>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" id="bw-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Add Bye Week</button>
       </div>
     </form>
   </div>

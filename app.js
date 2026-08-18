@@ -75,16 +75,17 @@ function playerLinkHTML(player){
 function loadState(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw) return {players:[], tournaments:[], matches:[]};
+    if(!raw) return {players:[], tournaments:[], matches:[], byeWeeks:[]};
     const parsed = JSON.parse(raw);
     return {
       players: parsed.players || [],
       tournaments: parsed.tournaments || [],
-      matches: parsed.matches || []
+      matches: parsed.matches || [],
+      byeWeeks: parsed.byeWeeks || []
     };
   }catch(e){
     console.error("Failed to load state, starting fresh.", e);
-    return {players:[], tournaments:[], matches:[]};
+    return {players:[], tournaments:[], matches:[], byeWeeks:[]};
   }
 }
 function saveState(){
@@ -360,6 +361,10 @@ function sumCountedResults(results){
 }
 
 // The most recent date with any recorded result — stands in for "today" on the tour calendar.
+function byeWeekDateMs(bw){
+  const d = new Date(bw.date + "T00:00:00");
+  return isNaN(d.getTime()) ? Date.now() : d.getTime();
+}
 function getLatestActiveDate(){
   let max = null;
   state.tournaments.forEach(t => {
@@ -367,6 +372,12 @@ function getLatestActiveDate(){
       const d = tournamentDateMs(t);
       if(max === null || d > max) max = d;
     }
+  });
+  // A bye week still marks a real point on the calendar even though nothing
+  // was played — it should still be able to push "current" forward.
+  (state.byeWeeks || []).forEach(bw => {
+    const d = byeWeekDateMs(bw);
+    if(max === null || d > max) max = d;
   });
   return max !== null ? max : Date.now();
 }
@@ -395,15 +406,20 @@ function getRankingSnapshotDates(){
 }
 
 // Selectable ranking weeks (Mondays) for the Rankings page and seeding/entry
-// pickers — one per tournament week that has results, newest first.
+// pickers — one per tournament week that has results, PLUS any week
+// explicitly marked as a bye week (rankings still "come out" that week —
+// nothing new counts, but the rolling window still moves forward, and it's
+// still a valid date to seed a future draw against).
 function getRankingWeeks(){
   const weeks = new Set();
   state.tournaments.forEach(t => {
     if(matchesForTournament(t.id).length > 0) weeks.add(mondayOf(tournamentDateMs(t)));
   });
+  (state.byeWeeks || []).forEach(bw => weeks.add(mondayOf(byeWeekDateMs(bw))));
   weeks.add(mondayOf(getLatestActiveDate()));
   return Array.from(weeks).sort((a,b) => b - a);
 }
+
 
 function ranksFromTotals(totals){
   const rows = state.players
@@ -944,7 +960,8 @@ function tournamentCellHTML(t){
 function renderTournaments(){
   const list = $("#tournaments-list");
   const empty = $("#tournaments-empty");
-  if(state.tournaments.length === 0){
+  const byeWeeks = state.byeWeeks || [];
+  if(state.tournaments.length === 0 && byeWeeks.length === 0){
     list.innerHTML = "";
     empty.classList.remove("hidden");
     return;
@@ -955,7 +972,12 @@ function renderTournaments(){
   state.tournaments.forEach(t => {
     const wk = mondayOf(tournamentDateMs(t));
     if(!byWeek.has(wk)) byWeek.set(wk, []);
-    byWeek.get(wk).push(t);
+    byWeek.get(wk).push({kind:"tournament", data:t});
+  });
+  byeWeeks.forEach(bw => {
+    const wk = mondayOf(byeWeekDateMs(bw));
+    if(!byWeek.has(wk)) byWeek.set(wk, []);
+    byWeek.get(wk).push({kind:"bye", data:bw});
   });
   const weeks = Array.from(byWeek.keys()).sort((a,b) => b - a);
 
@@ -964,19 +986,37 @@ function renderTournaments(){
     '</tr></thead><tbody>';
 
   weeks.forEach(wk => {
-    const weekTournaments = byWeek.get(wk).sort((a,b) => a.name.localeCompare(b.name));
-    weekTournaments.forEach((t, idx) => {
-      const {champion, runnerUp, semifinalists, quarterfinalists} = getTournamentResultsByRound(t);
-      const played = matchesForTournament(t.id).length > 0;
+    const items = byWeek.get(wk).sort((a,b) => {
+      if(a.kind !== b.kind) return a.kind === "bye" ? 1 : -1;
+      const nameA = a.kind === "tournament" ? a.data.name : "";
+      const nameB = b.kind === "tournament" ? b.data.name : "";
+      return nameA.localeCompare(nameB);
+    });
+    items.forEach((item, idx) => {
       html += '<tr class="' + (idx === 0 ? "cal-week-start" : "") + '">';
       if(idx === 0){
-        html += '<td class="cal-week" rowspan="' + weekTournaments.length + '">' + formatWeekDate(wk) + '</td>';
+        html += '<td class="cal-week" rowspan="' + items.length + '">' + formatWeekDate(wk) + '</td>';
       }
-      html += '<td class="cal-tourney-cell">' + tournamentCellHTML(t) + '</td>';
-      html += '<td>' + (champion.length ? playersListHTML(champion) : (played ? '<span class="cal-inprogress">In progress</span>' : "—")) + '</td>';
-      html += '<td>' + playersListHTML(runnerUp) + '</td>';
-      html += '<td>' + playersListHTML(semifinalists) + '</td>';
-      html += '<td>' + playersListHTML(quarterfinalists) + '</td>';
+      if(item.kind === "bye"){
+        const bw = item.data;
+        html += '<td class="cal-tourney-cell">' +
+          '<div class="cal-tourney-name cal-bye-name">Bye Week</div>' +
+          (bw.note ? '<div class="cal-tourney-location">' + escapeHtml(bw.note) + '</div>' : "") +
+          '<div class="cal-tourney-actions">' +
+            '<button class="btn btn-small btn-danger" data-delete-byeweek="' + bw.id + '">Delete</button>' +
+          '</div>' +
+        '</td>';
+        html += '<td colspan="4"><span class="cal-inprogress">No tournament this week</span></td>';
+      } else {
+        const t = item.data;
+        const {champion, runnerUp, semifinalists, quarterfinalists} = getTournamentResultsByRound(t);
+        const played = matchesForTournament(t.id).length > 0;
+        html += '<td class="cal-tourney-cell">' + tournamentCellHTML(t) + '</td>';
+        html += '<td>' + (champion.length ? playersListHTML(champion) : (played ? '<span class="cal-inprogress">In progress</span>' : "—")) + '</td>';
+        html += '<td>' + playersListHTML(runnerUp) + '</td>';
+        html += '<td>' + playersListHTML(semifinalists) + '</td>';
+        html += '<td>' + playersListHTML(quarterfinalists) + '</td>';
+      }
       html += '</tr>';
     });
   });
@@ -2370,8 +2410,11 @@ function buildBracketEntryForm(t, m){
 // including weeks where nothing was played but old results rolled off the
 // 52-week window and standings shifted anyway.
 function getAllWeeklySeries(){
-  if(state.tournaments.length === 0) return [];
-  const allDates = state.tournaments.map(t => tournamentDateMs(t));
+  const allDates = [
+    ...state.tournaments.map(t => tournamentDateMs(t)),
+    ...(state.byeWeeks || []).map(bw => byeWeekDateMs(bw))
+  ];
+  if(allDates.length === 0) return [];
   const startMonday = mondayOf(Math.min(...allDates));
   const endMonday = mondayOf(getLatestActiveDate());
   const weeks = [];
@@ -2835,6 +2878,26 @@ function handleEditPlayer(ev){
   }
 }
 
+function openAddByeWeek(){ $("#add-byeweek-backdrop").classList.remove("hidden"); $("#bw-date").focus(); }
+function closeAddByeWeek(){ $("#add-byeweek-backdrop").classList.add("hidden"); $("#add-byeweek-form").reset(); }
+function handleAddByeWeek(ev){
+  ev.preventDefault();
+  const date = $("#bw-date").value;
+  if(!date) return;
+  const note = $("#bw-note").value.trim();
+  if(!state.byeWeeks) state.byeWeeks = [];
+  state.byeWeeks.push({id: uid("bw"), date, note, createdAt: Date.now()});
+  saveState();
+  closeAddByeWeek();
+  renderTournaments();
+}
+function handleDeleteByeWeek(id){
+  if(!confirm("Delete this bye week?")) return;
+  state.byeWeeks = (state.byeWeeks || []).filter(bw => bw.id !== id);
+  saveState();
+  renderTournaments();
+}
+
 function handleAddTournament(ev){
   ev.preventDefault();
   const name = $("#at-name").value.trim();
@@ -3018,6 +3081,11 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#at-qual-fields").classList.toggle("hidden", !e.target.checked);
   });
 
+  $("#open-add-bye-week").addEventListener("click", openAddByeWeek);
+  $("#bw-cancel").addEventListener("click", closeAddByeWeek);
+  $("#add-byeweek-form").addEventListener("submit", handleAddByeWeek);
+  $("#add-byeweek-backdrop").addEventListener("click", (e) => { if(e.target.id === "add-byeweek-backdrop") closeAddByeWeek(); });
+
   $("#et-cancel").addEventListener("click", closeEditTournament);
   $("#edit-tournament-form").addEventListener("submit", handleEditTournament);
   $("#edit-tournament-backdrop").addEventListener("click", (e) => { if(e.target.id === "edit-tournament-backdrop") closeEditTournament(); });
@@ -3093,6 +3161,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if(editTBtn){ openEditTournament(editTBtn.dataset.editTournament); return; }
     const delTBtn = e.target.closest("[data-delete-tournament]");
     if(delTBtn){ handleDeleteTournament(delTBtn.dataset.deleteTournament); return; }
+    const delBwBtn = e.target.closest("[data-delete-byeweek]");
+    if(delBwBtn){ handleDeleteByeWeek(delBwBtn.dataset.deleteByeweek); return; }
   });
 
   $("#export-data").addEventListener("click", handleExportData);

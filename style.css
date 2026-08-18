@@ -1017,6 +1017,7 @@ form textarea{
   color: var(--ink-soft);
   font-style: italic;
 }
+.cal-bye-name{color: var(--ink-soft); font-style: italic;}
 
 /* ---------------- Rankings results breakdown ---------------- */
 .breakdown-row td{padding: 0 !important; border-bottom: 1px solid var(--line);}
