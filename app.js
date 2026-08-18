@@ -704,8 +704,8 @@ function renderRankings(){
     return '<tr>' +
       '<td class="rank-col">' + toggleBtn + '<span class="' + rankClass + '">' + rank + '</span></td>' +
       moveCell +
-      '<td><button class="player-link" data-open-player="' + r.p.id + '">' + escapeHtml(r.p.name) + '</button></td>' +
-      '<td class="country-chip">' + countryDisplayHTML(r.p.country) + '</td>' +
+      '<td><button class="player-link" data-open-player="' + r.p.id + '">' + flagImgHTML(r.p.country) + escapeHtml(r.p.name) + '</button></td>' +
+      '<td class="country-chip">' + (r.p.country ? escapeHtml(r.p.country.toUpperCase()) : "—") + '</td>' +
       '<td>' + r.stats.titles + '</td>' +
       '<td class="points-cell">' + r.stats.points.toLocaleString() + '</td>' +
       '</tr>' + breakdownRow;
@@ -1171,8 +1171,10 @@ function generateDraw(t){
   }
 
   t.bracketEntries = slots;
-  // Clear any recorded results — they referred to the previous draw's slots.
-  state.matches = state.matches.filter(m => m.tournamentId !== t.id);
+  // Clear old MAIN DRAW results only — they referred to the previous draw's
+  // slots. Qualifying results are a separate bracket and must not be touched
+  // by regenerating the main draw.
+  state.matches = state.matches.filter(m => !(m.tournamentId === t.id && (m.bracket || "main") === "main"));
 }
 
 // Resolves the full bracket: which player occupies every slot in every round,
@@ -1269,7 +1271,7 @@ function renderBracketPage(){
   sizeSelect.addEventListener("change", () => {
     const newSize = Number(sizeSelect.value);
     if(newSize === t.drawSize) return;
-    if(!confirm("Changing draw size clears this tournament's seeds, entrants, and recorded results. Continue?")){
+    if(!confirm("Changing draw size clears this tournament's main-draw seeds, entrants, and results. Qualifying is untouched. Continue?")){
       sizeSelect.value = String(t.drawSize);
       return;
     }
@@ -1277,7 +1279,7 @@ function renderBracketPage(){
     t.bracketEntries = new Array(capacityOf(newSize)).fill(0).map(() => ({type:"empty"}));
     t.seeds = new Array(numSeedsFor(newSize)).fill(null);
     t.unseededEntrants = [];
-    state.matches = state.matches.filter(m => m.tournamentId !== t.id);
+    state.matches = state.matches.filter(m => !(m.tournamentId === t.id && (m.bracket || "main") === "main"));
     saveState();
     renderBracketPage();
     renderRankings();
@@ -2435,58 +2437,222 @@ function renderRecords(){
 }
 
 /* ---------------- History view ---------------- */
-function populateHistoryFilters(){
-  const pSel = $("#history-player");
-  const prevP = pSel.value;
-  pSel.innerHTML = '<option value="all">All players</option>' +
-    [...state.players].sort((a,b) => a.name.localeCompare(b.name))
-      .map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + "</option>").join("");
-  if(prevP) pSel.value = prevP;
+/* ---------------- Grand Slam History ---------------- */
+function computeGrandSlamCareerStats(){
+  const stats = new Map();
+  state.players.forEach(p => stats.set(p.id, {QF:0, SF:0, F:0, W:0}));
+  const idxQF = ROUND_ORDER.indexOf("QF");
+  const idxSF = ROUND_ORDER.indexOf("SF");
+  const idxF = ROUND_ORDER.indexOf("F");
 
-  const tSel = $("#history-tournament");
-  const prevT = tSel.value;
-  tSel.innerHTML = '<option value="all">All tournaments</option>' +
-    [...state.tournaments].sort((a,b) => b.year - a.year)
-      .map(t => '<option value="' + t.id + '">' + escapeHtml(t.name) + " '" + String(t.year).slice(-2) + "</option>").join("");
-  if(prevT) tSel.value = prevT;
+  state.tournaments.filter(t => t.level === "GRAND_SLAM").forEach(t => {
+    const results = computeTournamentResults(t.id);
+    results.forEach((res, pid) => {
+      const s = stats.get(pid);
+      if(!s) return;
+      if(res.code === "W"){
+        s.QF++; s.SF++; s.F++; s.W++;
+      } else {
+        const idx = ROUND_ORDER.indexOf(res.code);
+        if(idx >= idxQF) s.QF++;
+        if(idx >= idxSF) s.SF++;
+        if(idx >= idxF) s.F++;
+      }
+    });
+  });
+  return stats;
 }
 
-function renderHistory(){
-  populateHistoryFilters();
-  const playerFilter = $("#history-player").value || "all";
-  const tourneyFilter = $("#history-tournament").value || "all";
+function renderGrandSlamHistory(){
+  const stats = computeGrandSlamCareerStats();
+  const rows = state.players
+    .map(p => ({p, s: stats.get(p.id)}))
+    .filter(r => r.s.QF > 0)
+    .sort((a,b) =>
+      b.s.W - a.s.W || b.s.F - a.s.F || b.s.SF - a.s.SF || b.s.QF - a.s.QF || a.p.name.localeCompare(b.p.name));
 
-  let matches = [...state.matches];
-  if(playerFilter !== "all") matches = matches.filter(m => m.playerAId === playerFilter || m.playerBId === playerFilter);
-  if(tourneyFilter !== "all") matches = matches.filter(m => m.tournamentId === tourneyFilter);
-  matches.sort((a,b) => b.createdAt - a.createdAt);
-
-  const list = $("#history-list");
-  const empty = $("#history-empty");
-  if(matches.length === 0){
-    list.innerHTML = "";
+  const table = $("#slams-table");
+  const empty = $("#slams-empty");
+  if(rows.length === 0){
+    table.classList.add("hidden");
     empty.classList.remove("hidden");
     return;
   }
+  table.classList.remove("hidden");
   empty.classList.add("hidden");
-  list.innerHTML = "";
+
+  $("#slams-body").innerHTML = rows.map(r => (
+    '<tr>' +
+    '<td><button class="player-link" data-open-player="' + r.p.id + '">' + flagImgHTML(r.p.country) + escapeHtml(r.p.name) + '</button></td>' +
+    '<td class="country-chip">' + (r.p.country ? escapeHtml(r.p.country.toUpperCase()) : "—") + '</td>' +
+    '<td>' + r.s.QF + '</td>' +
+    '<td>' + r.s.SF + '</td>' +
+    '<td>' + r.s.F + '</td>' +
+    '<td class="points-cell">' + r.s.W + '</td>' +
+    '</tr>'
+  )).join("");
+}
+
+// Same cumulative-appearance idea as computeGrandSlamCareerStats, but scoped
+// to a single metric and broken out per named major (all editions of a
+// tournament with the same name are treated as "the same Slam" across years).
+let slamMetric = "QF";
+function computeGrandSlamBreakdownByName(metric){
+  const slamNames = Array.from(new Set(state.tournaments.filter(t => t.level === "GRAND_SLAM").map(t => t.name))).sort();
+  const idxQF = ROUND_ORDER.indexOf("QF"), idxSF = ROUND_ORDER.indexOf("SF"), idxF = ROUND_ORDER.indexOf("F");
+  const target = metric === "QF" ? idxQF : metric === "SF" ? idxSF : metric === "F" ? idxF : null;
+
+  const counts = new Map();
+  state.players.forEach(p => {
+    const row = {};
+    slamNames.forEach(n => { row[n] = 0; });
+    counts.set(p.id, row);
+  });
+
+  state.tournaments.filter(t => t.level === "GRAND_SLAM").forEach(t => {
+    const results = computeTournamentResults(t.id);
+    results.forEach((res, pid) => {
+      const row = counts.get(pid);
+      if(!row) return;
+      let reached;
+      if(metric === "W") reached = res.code === "W";
+      else reached = res.code === "W" || ROUND_ORDER.indexOf(res.code) >= target;
+      if(reached) row[t.name] = (row[t.name] || 0) + 1;
+    });
+  });
+
+  return {slamNames, counts};
+}
+
+function renderGrandSlamBreakdown(){
+  $all("[data-slam-metric]").forEach(btn => btn.classList.toggle("active", btn.dataset.slamMetric === slamMetric));
+
+  const {slamNames, counts} = computeGrandSlamBreakdownByName(slamMetric);
+  const table = $("#slam-breakdown-table");
+  const empty = $("#slam-breakdown-empty");
+  if(slamNames.length === 0){
+    table.classList.add("hidden");
+    empty.classList.remove("hidden");
+    return;
+  }
+  table.classList.remove("hidden");
+  empty.classList.add("hidden");
+
+  $("#slam-breakdown-head").innerHTML = "<th>Player</th>" +
+    slamNames.map(n => '<th title="' + escapeHtml(n) + '">' + escapeHtml(abbreviateTournamentName(n)) + "</th>").join("") +
+    "<th>Total</th>";
+
+  const rows = state.players
+    .map(p => {
+      const row = counts.get(p.id) || {};
+      const total = slamNames.reduce((s, n) => s + (row[n] || 0), 0);
+      return {p, row, total};
+    })
+    .filter(r => r.total > 0)
+    .sort((a,b) => b.total - a.total || a.p.name.localeCompare(b.p.name));
+
+  $("#slam-breakdown-body").innerHTML = rows.map(r => (
+    '<tr><td><button class="player-link" data-open-player="' + r.p.id + '">' + flagImgHTML(r.p.country) + escapeHtml(r.p.name) + '</button></td>' +
+    slamNames.map(n => '<td>' + (r.row[n] || 0) + '</td>').join("") +
+    '<td class="points-cell">' + r.total + '</td></tr>'
+  )).join("");
+}
+
+/* ---------------- Head to Head ---------------- */
+function populateH2HSelects(){
+  const playersSorted = [...state.players].sort((a,b) => a.name.localeCompare(b.name));
+  const optionsHTML = '<option value="">— Select Player —</option>' +
+    playersSorted.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join("");
+  ["#h2h-playerA", "#h2h-playerB"].forEach(sel => {
+    const el2 = $(sel);
+    const prev = el2.value;
+    el2.innerHTML = optionsHTML;
+    if(prev) el2.value = prev;
+  });
+}
+
+function computeHeadToHead(idA, idB){
+  const matches = state.matches.filter(m =>
+    (m.playerAId === idA && m.playerBId === idB) || (m.playerAId === idB && m.playerBId === idA)
+  );
+  matches.sort((a,b) => {
+    const ta = tournamentById(a.tournamentId), tb = tournamentById(b.tournamentId);
+    return (tb ? tournamentDateMs(tb) : 0) - (ta ? tournamentDateMs(ta) : 0);
+  });
+  let winsA = 0, winsB = 0;
+  const surfaceStats = {hard:{a:0,b:0}, clay:{a:0,b:0}, grass:{a:0,b:0}};
   matches.forEach(m => {
     const t = tournamentById(m.tournamentId);
-    const a = playerById(m.playerAId), b = playerById(m.playerBId);
-    if(!a || !b) return;
-    const row = el("div", {class:"match-row"}, [
-      el("span", {class:"match-round"}, [ROUND_LABELS[m.round]]),
-      el("span", {class:"match-players", html:
-        (m.winnerId === a.id ? '<span class="winner">' + playerNameHTML(a) + '</span>' : playerNameHTML(a)) +
-        ' def. ' +
-        (m.winnerId === b.id ? '<span class="winner">' + playerNameHTML(b) + '</span>' : playerNameHTML(b))
-      }),
-      el("span", {html: renderScoreboardHTML(m)}),
-      el("span", {class:"match-tourney"}, [t ? (t.name + " '" + String(t.year).slice(-2)) : "—"]),
-      el("button", {class:"btn btn-small btn-danger match-del", "data-delete-match": m.id}, ["Delete"])
-    ]);
-    list.appendChild(row);
+    if(m.winnerId === idA) winsA++;
+    else if(m.winnerId === idB) winsB++;
+    if(t && surfaceStats[t.surface]){
+      if(m.winnerId === idA) surfaceStats[t.surface].a++;
+      else if(m.winnerId === idB) surfaceStats[t.surface].b++;
+    }
   });
+  return {matches, winsA, winsB, surfaceStats};
+}
+
+function renderHeadToHead(){
+  populateH2HSelects();
+  const idA = $("#h2h-playerA").value;
+  const idB = $("#h2h-playerB").value;
+  const empty = $("#h2h-empty");
+  const body = $("#h2h-body");
+
+  const pA = idA ? playerById(idA) : null;
+  const pB = idB ? playerById(idB) : null;
+
+  if(!pA || !pB || idA === idB){
+    body.classList.add("hidden");
+    empty.classList.remove("hidden");
+    empty.querySelector("p").textContent = (idA && idA === idB)
+      ? "Choose two different players."
+      : "Pick two players to see their head-to-head record.";
+    return;
+  }
+  empty.classList.add("hidden");
+  body.classList.remove("hidden");
+
+  const {matches, winsA, winsB, surfaceStats} = computeHeadToHead(idA, idB);
+
+  body.innerHTML = "";
+  body.appendChild(el("div", {class:"h2h-header"}, [
+    el("div", {class:"h2h-name", html: playerLinkHTML(pA)}),
+    el("div", {class:"h2h-score"}, [winsA + " – " + winsB]),
+    el("div", {class:"h2h-name", html: playerLinkHTML(pB)})
+  ]));
+
+  if(matches.length > 0){
+    const surfaceRow = el("div", {class:"profile-stats"}, ["hard","clay","grass"].map(s =>
+      el("div", {class:"stat-box"}, [
+        el("div", {class:"stat-num"}, [surfaceStats[s].a + "-" + surfaceStats[s].b]),
+        el("div", {class:"stat-label"}, [s])
+      ])
+    ));
+    body.appendChild(surfaceRow);
+  }
+
+  body.appendChild(el("div", {class:"profile-section-title"}, ["All Meetings"]));
+  if(matches.length === 0){
+    body.appendChild(el("p", {}, ["These two haven't played each other yet."]));
+  } else {
+    matches.forEach(m => {
+      const t = tournamentById(m.tournamentId);
+      const a = playerById(m.playerAId), b = playerById(m.playerBId);
+      if(!a || !b) return;
+      body.appendChild(el("div", {class:"match-row"}, [
+        el("span", {class:"match-round"}, [ROUND_LABELS[m.round] || m.round]),
+        el("span", {class:"match-players", html:
+          (m.winnerId === a.id ? '<span class="winner">' + playerLinkHTML(a) + '</span>' : playerLinkHTML(a)) +
+          ' def. ' +
+          (m.winnerId === b.id ? '<span class="winner">' + playerLinkHTML(b) + '</span>' : playerLinkHTML(b))
+        }),
+        el("span", {html: renderScoreboardHTML(m)}),
+        el("span", {class:"match-tourney"}, [t ? (t.name + " '" + String(t.year).slice(-2)) : "—"])
+      ]));
+    });
+  }
 }
 
 /* ---------------- Modals: add player / bulk add / add tournament ---------------- */
@@ -2690,7 +2856,66 @@ function switchView(view){
   if(view === "players") renderPlayers();
   if(view === "tournaments") renderTournaments();
   if(view === "records") renderRecords();
-  if(view === "history") renderHistory();
+  if(view === "slams"){ renderGrandSlamHistory(); renderGrandSlamBreakdown(); }
+  if(view === "h2h") renderHeadToHead();
+}
+
+/* ---------------- Backup: export / import ---------------- */
+function handleExportData(){
+  const payload = {
+    app: "fortnight-watp-backup",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    data: state
+  };
+  const dataStr = JSON.stringify(payload, null, 2);
+  const blob = new Blob([dataStr], {type: "application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = "fortnight-watp-backup-" + dateStamp + ".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function handleImportFileSelected(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    let parsed;
+    try{
+      parsed = JSON.parse(ev.target.result);
+    }catch(err){
+      alert("Couldn't read that file — make sure it's a valid JSON backup exported from this app.");
+      e.target.value = "";
+      return;
+    }
+    // Accept either the wrapped export format or a raw {players,tournaments,matches} object.
+    const payload = (parsed && parsed.data && typeof parsed.data === "object") ? parsed.data : parsed;
+    if(!payload || !Array.isArray(payload.players) || !Array.isArray(payload.tournaments) || !Array.isArray(payload.matches)){
+      alert("That doesn't look like a valid Fortnight backup file.");
+      e.target.value = "";
+      return;
+    }
+    const summary = payload.players.length + " players, " + payload.tournaments.length +
+      " tournaments, and " + payload.matches.length + " results";
+    if(!confirm("Import this backup (" + summary + ")? This replaces everything currently in your browser. This can't be undone.")){
+      e.target.value = "";
+      return;
+    }
+    state = {
+      players: payload.players,
+      tournaments: payload.tournaments,
+      matches: payload.matches
+    };
+    saveState();
+    location.reload();
+  };
+  reader.readAsText(file);
 }
 
 /* ---------------- Wire up events ---------------- */
@@ -2764,8 +2989,14 @@ document.addEventListener("DOMContentLoaded", () => {
     renderRankings();
   });
 
-  $("#history-player").addEventListener("change", renderHistory);
-  $("#history-tournament").addEventListener("change", renderHistory);
+  $("#h2h-playerA").addEventListener("change", renderHeadToHead);
+  $("#h2h-playerB").addEventListener("change", renderHeadToHead);
+  $("#slam-metric-toggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-slam-metric]");
+    if(!btn) return;
+    slamMetric = btn.dataset.slamMetric;
+    renderGrandSlamBreakdown();
+  });
 
   $("#player-modal-backdrop").addEventListener("click", (e) => { if(e.target.id === "player-modal-backdrop") closePlayerModal(); });
 
@@ -2787,16 +3018,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if(editTBtn){ openEditTournament(editTBtn.dataset.editTournament); return; }
     const delTBtn = e.target.closest("[data-delete-tournament]");
     if(delTBtn){ handleDeleteTournament(delTBtn.dataset.deleteTournament); return; }
-    const delBtn = e.target.closest("[data-delete-match]");
-    if(delBtn){
-      if(confirm("Delete this match result? This can't be undone.")){
-        state.matches = state.matches.filter(m => m.id !== delBtn.dataset.deleteMatch);
-        saveState();
-        renderHistory();
-        renderRankings();
-      }
-    }
   });
+
+  $("#export-data").addEventListener("click", handleExportData);
+  $("#import-data-trigger").addEventListener("click", () => $("#import-data-input").click());
+  $("#import-data-input").addEventListener("change", handleImportFileSelected);
 
   $("#reset-all-data").addEventListener("click", () => {
     const summary = state.players.length + " players, " + state.tournaments.length +

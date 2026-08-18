@@ -25,7 +25,8 @@
       <button class="tab" data-view="players">Players</button>
       <button class="tab" data-view="tournaments">Tournaments</button>
       <button class="tab" data-view="records">Records</button>
-      <button class="tab" data-view="history">Match History</button>
+      <button class="tab" data-view="slams">Slam History</button>
+      <button class="tab" data-view="h2h">Head to Head</button>
     </nav>
   </div>
   <div class="brand-bar"></div>
@@ -125,23 +126,60 @@
     </div>
   </section>
 
-  <!-- MATCH HISTORY -->
-  <section class="view hidden" id="view-history">
+  <!-- GRAND SLAM HISTORY -->
+  <section class="view hidden" id="view-slams">
     <div class="view-head">
-      <h2>Match History</h2>
+      <h2>Grand Slam History</h2>
+    </div>
+    <p class="rankings-rule-note">Career Grand Slam appearances — reaching a later round always counts toward the earlier ones too (a finalist has also reached the quarterfinal and semifinal that trip).</p>
+    <div id="slams-empty" class="empty hidden">
+      <p>No Grand Slam results yet.</p>
+      <p class="empty-sub">This fills in once results start coming in for a Grand Slam-level tournament.</p>
+    </div>
+    <table class="data-table" id="slams-table">
+      <thead>
+        <tr><th>Player</th><th>Country</th><th>QF</th><th>SF</th><th>F</th><th>Titles</th></tr>
+      </thead>
+      <tbody id="slams-body"></tbody>
+    </table>
+
+    <div class="bracket-section-title">
+      <h3>By Major</h3>
+    </div>
+    <div class="mode-toggle" id="slam-metric-toggle">
+      <button class="mode-btn active" data-slam-metric="QF">QF</button>
+      <button class="mode-btn" data-slam-metric="SF">SF</button>
+      <button class="mode-btn" data-slam-metric="F">F</button>
+      <button class="mode-btn" data-slam-metric="W">Titles</button>
+    </div>
+    <div id="slam-breakdown-empty" class="empty hidden">
+      <p>No Grand Slam results yet.</p>
+    </div>
+    <div class="calendar-scroll">
+      <table class="data-table" id="slam-breakdown-table">
+        <thead><tr id="slam-breakdown-head"></tr></thead>
+        <tbody id="slam-breakdown-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- HEAD TO HEAD -->
+  <section class="view hidden" id="view-h2h">
+    <div class="view-head">
+      <h2>Head to Head</h2>
       <div class="controls">
-        <label>Player
-          <select id="history-player"></select>
+        <label>Player A
+          <select id="h2h-playerA"></select>
         </label>
-        <label>Tournament
-          <select id="history-tournament"></select>
+        <label>Player B
+          <select id="h2h-playerB"></select>
         </label>
       </div>
     </div>
-    <div id="history-empty" class="empty hidden">
-      <p>No matches logged yet.</p>
+    <div id="h2h-empty" class="empty">
+      <p>Pick two players to see their head-to-head record.</p>
     </div>
-    <div id="history-list"></div>
+    <div id="h2h-body" class="hidden"></div>
   </section>
 
   <!-- BRACKET (drill-down from Tournaments, not a top-level tab) -->
@@ -489,8 +527,13 @@
 
 <footer class="site-footer">
   <div class="wrap footer-row">
-    <span class="footer-note">All data lives in this browser only — nothing is sent anywhere.</span>
-    <button class="btn btn-small btn-danger" id="reset-all-data">Reset All Tour Data</button>
+    <span class="footer-note">All data lives in this browser only — nothing is sent anywhere. Export a backup occasionally in case this browser's data ever gets cleared.</span>
+    <div class="footer-actions">
+      <button class="btn btn-small btn-ghost" id="export-data">Export Backup (.json)</button>
+      <button class="btn btn-small btn-ghost" id="import-data-trigger">Import Backup</button>
+      <input type="file" id="import-data-input" accept="application/json,.json" class="hidden">
+      <button class="btn btn-small btn-danger" id="reset-all-data">Reset All Tour Data</button>
+    </div>
   </div>
 </footer>
 

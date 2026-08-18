@@ -632,6 +632,29 @@ form textarea{
   display:grid; grid-template-columns: repeat(3,1fr); gap: 10px;
   margin-bottom: 22px;
 }
+.h2h-header{
+  display:flex; align-items:center; justify-content:center;
+  gap: 24px;
+  padding: 24px;
+  margin-bottom: 20px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.h2h-name{
+  font-family:'Oswald', sans-serif;
+  font-size: 22px;
+  flex: 1;
+  text-align: center;
+}
+.h2h-name .flag-img{width: 22px; height: 16px;}
+.h2h-score{
+  font-family:'Oswald', sans-serif;
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--ball);
+  flex-shrink: 0;
+}
 .stat-box{
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1070,7 +1093,9 @@ form textarea{
   font-family:'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--ink-soft);
+  max-width: 480px;
 }
+.footer-actions{display:flex; gap: 8px; flex-wrap: wrap; align-items: center;}
 
 @media (max-width: 640px){
   .profile-stats{grid-template-columns: repeat(3,1fr);}
