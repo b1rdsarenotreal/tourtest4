@@ -1236,19 +1236,11 @@ function openBracket(tournamentId){
   $all(".tab").forEach(tab => tab.classList.remove("active"));
   $all(".view").forEach(v => v.classList.add("hidden"));
   $("#view-bracket").classList.remove("hidden");
-  switchBracketSubTab("draw");
   renderBracketPage();
 }
 function closeBracket(){
   currentBracketTournamentId = null;
   switchView("tournaments");
-}
-
-let bracketSubTab = "draw";
-function switchBracketSubTab(tab){
-  bracketSubTab = tab;
-  $all(".subtab").forEach(btn => btn.classList.toggle("active", btn.dataset.bracketTab === tab));
-  $all(".bracket-subpage").forEach(page => page.classList.toggle("hidden", page.id !== "bracket-subpage-" + tab));
 }
 
 function renderBracketPage(){
@@ -1344,9 +1336,7 @@ function renderQualifyingConfig(t){
   $("#qual-numqualifiers").value = String(q.numQualifiers);
   $("#qual-numrounds").value = String(q.numRounds);
   $("#qual-body").classList.toggle("hidden", !q.enabled);
-  $("#bracket-subnav-qual").classList.toggle("hidden", !q.enabled);
-  // If qualifying just got disabled while its sub-tab was open, fall back to the Draw tab.
-  if(!q.enabled && bracketSubTab === "qual") switchBracketSubTab("draw");
+  $("#qual-draw-top-section").classList.toggle("hidden", !q.enabled);
   if(q.enabled){
     renderQualEntrantsList(t);
     renderQualBracketRounds(t);
@@ -2963,11 +2953,6 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#edit-tournament-backdrop").addEventListener("click", (e) => { if(e.target.id === "edit-tournament-backdrop") closeEditTournament(); });
 
   $("#bracket-back").addEventListener("click", closeBracket);
-  $("#bracket-subnav").addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-bracket-tab]");
-    if(!btn || btn.classList.contains("hidden")) return;
-    switchBracketSubTab(btn.dataset.bracketTab);
-  });
   $("#bracket-toggle-seed").addEventListener("click", () => $("#bracket-seed-grid").classList.toggle("hidden"));
   $("#bracket-seed-grid").addEventListener("change", handleSeedSelectChange);
   $("#bracket-seeds-list").addEventListener("input", handleSeedSearchInput);
