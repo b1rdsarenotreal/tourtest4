@@ -928,6 +928,7 @@ function playersListHTML(players){
 
 function tournamentCellHTML(t){
   return '<div class="cal-tourney-name">' + escapeHtml(t.name) + '</div>' +
+    (t.location ? '<div class="cal-tourney-location">' + escapeHtml(t.location) + '</div>' : "") +
     '<div class="cal-tourney-tags">' +
       '<span class="level-tag">' + escapeHtml(LEVEL_LABELS[t.level] || t.level) + '</span>' +
       '<span class="surface-tag surface-' + t.surface + '">' + t.surface + '</span>' +
@@ -1236,11 +1237,32 @@ function openBracket(tournamentId){
   $all(".tab").forEach(tab => tab.classList.remove("active"));
   $all(".view").forEach(v => v.classList.add("hidden"));
   $("#view-bracket").classList.remove("hidden");
+  switchBracketSubTab("draw");
   renderBracketPage();
 }
 function closeBracket(){
   currentBracketTournamentId = null;
   switchView("tournaments");
+}
+
+let bracketSubTab = "draw";
+function switchBracketSubTab(tab){
+  bracketSubTab = tab;
+  $all(".subtab").forEach(btn => btn.classList.toggle("active", btn.dataset.bracketTab === tab));
+  $all(".bracket-subpage").forEach(page => page.classList.toggle("hidden", page.id !== "bracket-subpage-" + tab));
+
+  // Bracket layout measures each card's real rendered height to position
+  // everything — that only works while its page is actually visible (a
+  // hidden/display:none subtree always measures 0px). Any render that
+  // happened while this page was hidden (e.g. generating the draw from the
+  // Entry List tab) needs a fresh pass now that it's on-screen.
+  const t = tournamentById(currentBracketTournamentId);
+  if(!t) return;
+  if(tab === "draw"){
+    renderBracketRounds(t);
+  } else if(tab === "qual" && t.qualifying && t.qualifying.enabled){
+    renderQualBracketRounds(t);
+  }
 }
 
 function renderBracketPage(){
@@ -1256,6 +1278,7 @@ function renderBracketPage(){
   head.appendChild(el("div", {}, [
     el("h2", {}, [t.name]),
     el("div", {class:"profile-meta"}, [
+      (t.location ? t.location + " · " : "") +
       (LEVEL_LABELS[t.level] || t.level) + " · " + t.surface + " · " + (t.startDate || t.year) +
       " · Draw of " + t.drawSize + (nByes ? " (" + cap + "-slot bracket, " + nByes + " bye" + (nByes===1?"":"s") + ")" : "")
     ])
@@ -1336,7 +1359,9 @@ function renderQualifyingConfig(t){
   $("#qual-numqualifiers").value = String(q.numQualifiers);
   $("#qual-numrounds").value = String(q.numRounds);
   $("#qual-body").classList.toggle("hidden", !q.enabled);
-  $("#qual-draw-top-section").classList.toggle("hidden", !q.enabled);
+  $("#bracket-subnav-qual").classList.toggle("hidden", !q.enabled);
+  // If qualifying just got disabled while its sub-tab was open, fall back to the Draw tab.
+  if(!q.enabled && bracketSubTab === "qual") switchBracketSubTab("draw");
   if(q.enabled){
     renderQualEntrantsList(t);
     renderQualBracketRounds(t);
@@ -2241,7 +2266,10 @@ function buildSlotRow(slot, m, which, t){
     // Everything else: clicking a name opens their profile.
     nameHTML = badges + (p ? (m.status === "ready" ? playerNameHTML(p) : playerLinkHTML(p)) : "(removed player)");
   } else if(slot.type === "bye"){
-    nameHTML = "Bye"; extraClass = " slot-bye";
+    // A blank (not simply hidden) placeholder — same padding/line-height as
+    // a real row, so the card's measured height (and therefore every round
+    // after it) doesn't shift at all, it just doesn't show the word "Bye".
+    nameHTML = "&nbsp;"; extraClass = " slot-bye";
   } else {
     nameHTML = "TBD"; extraClass = " slot-empty";
   }
@@ -2559,16 +2587,54 @@ function renderGrandSlamBreakdown(){
 }
 
 /* ---------------- Head to Head ---------------- */
-function populateH2HSelects(){
-  const playersSorted = [...state.players].sort((a,b) => a.name.localeCompare(b.name));
-  const optionsHTML = '<option value="">— Select Player —</option>' +
-    playersSorted.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join("");
-  ["#h2h-playerA", "#h2h-playerB"].forEach(sel => {
-    const el2 = $(sel);
-    const prev = el2.value;
-    el2.innerHTML = optionsHTML;
-    if(prev) el2.value = prev;
-  });
+let h2hPlayerA = null, h2hPlayerB = null;
+
+function buildH2HPicker(side){
+  const wrap = $("#h2h-picker-" + side.toLowerCase());
+  wrap.innerHTML = "";
+  const id = side === "A" ? h2hPlayerA : h2hPlayerB;
+  const p = id ? playerById(id) : null;
+  const input = el("input", {type:"text", class:"picker-input", autocomplete:"off", placeholder:"Search player…", "data-h2h-search": side});
+  input.value = p ? p.name : "";
+  wrap.appendChild(input);
+  if(p){
+    wrap.appendChild(el("button", {type:"button", class:"picker-clear", "data-h2h-clear": side}, ["\u00d7"]));
+  }
+  wrap.appendChild(el("div", {class:"picker-suggestions hidden", "data-h2h-suggestions": side}));
+}
+
+function handleH2HSearchInput(e){
+  const side = e.target.dataset.h2hSearch;
+  if(!side) return;
+  const query = e.target.value;
+  const suggestionsEl = document.querySelector('[data-h2h-suggestions="' + side + '"]');
+  if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
+  const otherSide = side === "A" ? h2hPlayerB : h2hPlayerA;
+  const results = state.players
+    .filter(p => p.id !== otherSide)
+    .filter(p => matchesSearch(p.name, query))
+    .slice(0, 8);
+  suggestionsEl.innerHTML = results.length
+    ? results.map(p => '<button type="button" class="picker-option" data-h2h-pick="' + side + '" data-player-id="' + p.id + '">' + playerNameHTML(p) + '</button>').join("")
+    : '<div class="picker-empty">No match</div>';
+  suggestionsEl.classList.remove("hidden");
+}
+
+function handleH2HClick(e){
+  const pickBtn = e.target.closest("[data-h2h-pick]");
+  if(pickBtn){
+    const side = pickBtn.dataset.h2hPick;
+    const pid = pickBtn.dataset.playerId;
+    if(side === "A") h2hPlayerA = pid; else h2hPlayerB = pid;
+    renderHeadToHead();
+    return;
+  }
+  const clearBtn = e.target.closest("[data-h2h-clear]");
+  if(clearBtn){
+    const side = clearBtn.dataset.h2hClear;
+    if(side === "A") h2hPlayerA = null; else h2hPlayerB = null;
+    renderHeadToHead();
+  }
 }
 
 function computeHeadToHead(idA, idB){
@@ -2594,9 +2660,10 @@ function computeHeadToHead(idA, idB){
 }
 
 function renderHeadToHead(){
-  populateH2HSelects();
-  const idA = $("#h2h-playerA").value;
-  const idB = $("#h2h-playerB").value;
+  buildH2HPicker("A");
+  buildH2HPicker("B");
+  const idA = h2hPlayerA;
+  const idB = h2hPlayerB;
   const empty = $("#h2h-empty");
   const body = $("#h2h-body");
 
@@ -2773,6 +2840,7 @@ function handleAddTournament(ev){
   const name = $("#at-name").value.trim();
   const startDate = $("#at-date").value;
   if(!name || !startDate) return;
+  const location = $("#at-location").value.trim();
   const year = new Date(startDate + "T00:00:00").getFullYear();
   const level = $("#at-level").value;
   const surface = $("#at-surface").value;
@@ -2781,7 +2849,7 @@ function handleAddTournament(ev){
   const qualNum = Number($("#at-qual-numqualifiers").value) || 8;
   const qualRounds = Number($("#at-qual-numrounds").value) || 2;
   state.tournaments.push({
-    id: uid("t"), name, level, surface, year, startDate, drawSize,
+    id: uid("t"), name, location, level, surface, year, startDate, drawSize,
     bracketEntries: new Array(capacityOf(drawSize)).fill(0).map(() => ({type:"empty"})),
     seeds: new Array(numSeedsFor(drawSize)).fill(null),
     unseededEntrants: [],
@@ -2804,6 +2872,7 @@ function openEditTournament(id){
   if(!t) return;
   $("#et-id").value = t.id;
   $("#et-name").value = t.name;
+  $("#et-location").value = t.location || "";
   $("#et-level").value = t.level;
   $("#et-surface").value = t.surface;
   $("#et-date").value = t.startDate || "";
@@ -2821,6 +2890,7 @@ function handleEditTournament(ev){
   const startDate = $("#et-date").value;
   if(!name || !startDate) return;
   t.name = name;
+  t.location = $("#et-location").value.trim();
   t.level = $("#et-level").value;
   t.surface = $("#et-surface").value;
   t.startDate = startDate;
@@ -2953,6 +3023,11 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#edit-tournament-backdrop").addEventListener("click", (e) => { if(e.target.id === "edit-tournament-backdrop") closeEditTournament(); });
 
   $("#bracket-back").addEventListener("click", closeBracket);
+  $("#bracket-subnav").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-bracket-tab]");
+    if(!btn || btn.classList.contains("hidden")) return;
+    switchBracketSubTab(btn.dataset.bracketTab);
+  });
   $("#bracket-toggle-seed").addEventListener("click", () => $("#bracket-seed-grid").classList.toggle("hidden"));
   $("#bracket-seed-grid").addEventListener("change", handleSeedSelectChange);
   $("#bracket-seeds-list").addEventListener("input", handleSeedSearchInput);
@@ -2989,8 +3064,8 @@ document.addEventListener("DOMContentLoaded", () => {
     renderRankings();
   });
 
-  $("#h2h-playerA").addEventListener("change", renderHeadToHead);
-  $("#h2h-playerB").addEventListener("change", renderHeadToHead);
+  $("#view-h2h").addEventListener("input", handleH2HSearchInput);
+  $("#view-h2h").addEventListener("click", handleH2HClick);
   $("#slam-metric-toggle").addEventListener("click", (e) => {
     const btn = e.target.closest("[data-slam-metric]");
     if(!btn) return;

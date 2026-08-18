@@ -169,10 +169,10 @@
       <h2>Head to Head</h2>
       <div class="controls">
         <label>Player A
-          <select id="h2h-playerA"></select>
+          <div class="picker-wrap" id="h2h-picker-a"></div>
         </label>
         <label>Player B
-          <select id="h2h-playerB"></select>
+          <div class="picker-wrap" id="h2h-picker-b"></div>
         </label>
       </div>
     </div>
@@ -187,20 +187,29 @@
     <button class="btn btn-ghost back-btn" id="bracket-back">&larr; Back to Tournaments</button>
     <div class="view-head" id="bracket-head"></div>
 
-    <div class="bracket-section-title">
-      <h3>Seeds</h3>
+    <div class="bracket-subnav" id="bracket-subnav">
+      <button class="subtab active" data-bracket-tab="draw">Draw</button>
+      <button class="subtab hidden" data-bracket-tab="qual" id="bracket-subnav-qual">Qualifying Draw</button>
+      <button class="subtab" data-bracket-tab="entry">Entry List</button>
     </div>
-    <div id="seed-index" class="seed-index-grid"></div>
 
-    <div id="bracket-draw-container"></div>
+    <div class="bracket-subpage" id="bracket-subpage-draw">
+      <div class="bracket-section-title">
+        <h3>Seeds</h3>
+      </div>
+      <div id="seed-index" class="seed-index-grid"></div>
 
-    <div id="qual-draw-top-section" class="hidden">
+      <div id="bracket-draw-container"></div>
+    </div>
+
+    <div class="bracket-subpage hidden" id="bracket-subpage-qual">
       <div class="bracket-section-title">
         <h3>Qualifying Draw</h3>
       </div>
       <div class="bracket-wrap" id="qual-bracket-wrap"></div>
     </div>
 
+    <div class="bracket-subpage hidden" id="bracket-subpage-entry">
     <div class="bracket-section">
       <div class="bracket-section-title">
         <h3>Auto-Fill Field from Rankings</h3>
@@ -314,6 +323,7 @@
       <p class="modal-help">Fine-tune individual slots directly — useful for fixing a single slot without redrawing the whole bracket.</p>
       <div id="bracket-seed-grid" class="bracket-seed-grid hidden"></div>
     </div>
+    </div>
   </section>
 
 </main>
@@ -401,6 +411,9 @@
       <label>Name
         <input type="text" id="et-name" required maxlength="60">
       </label>
+      <label>Location <span style="text-transform:none; font-weight:400;">(optional)</span>
+        <input type="text" id="et-location" maxlength="80">
+      </label>
       <div class="field-row">
         <label>Level
           <select id="et-level">
@@ -453,6 +466,9 @@
       <h3>Add Tournament</h3>
       <label>Name
         <input type="text" id="at-name" required maxlength="60" placeholder="e.g. Palmwood Open">
+      </label>
+      <label>Location <span style="text-transform:none; font-weight:400;">(optional)</span>
+        <input type="text" id="at-location" maxlength="80" placeholder="e.g. Melbourne, Australia">
       </label>
       <div class="field-row">
         <label>Level

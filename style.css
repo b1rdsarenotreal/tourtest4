@@ -685,6 +685,35 @@ form textarea{
 
 /* ---------------- Bracket view ---------------- */
 .back-btn{margin-bottom: 18px;}
+.bracket-subnav{
+  display:flex; gap: 4px; flex-wrap: wrap;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 24px;
+  padding-bottom: 0;
+}
+.subtab{
+  font-family:'Oswald', sans-serif;
+  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  background: var(--paper-2);
+  color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  padding: 9px 18px;
+  cursor: pointer;
+  border-radius: var(--radius) var(--radius) 0 0;
+  position: relative;
+  top: 2px;
+}
+.subtab:hover{color: var(--ink);}
+.subtab.active{
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+  font-weight: 600;
+}
+.bracket-subpage{min-height: 200px;}
 .bracket-section{margin-bottom: 28px;}
 .bracket-section-title{
   display:flex; align-items:center; justify-content:space-between;
@@ -872,7 +901,8 @@ form textarea{
   flex-shrink: 0;
 }
 .bracket-slot.slot-empty .slot-name{color: var(--ink-soft); font-style: italic;}
-.bracket-slot.slot-bye .slot-name{color: var(--ink-soft); font-family:'JetBrains Mono', monospace; font-size:11px; text-transform:uppercase;}
+.bracket-slot.slot-bye{border-bottom-color: transparent;}
+.bracket-slot.slot-bye .slot-name{visibility: hidden;}
 .bracket-slot.slot-winner{background: var(--paper-2); font-weight: 700;}
 .bracket-slot.slot-walkover-target{cursor: pointer;}
 .bracket-slot.slot-walkover-target:hover{background: var(--paper-2);}
@@ -965,6 +995,12 @@ form textarea{
 }
 .cal-tourney-cell{min-width: 220px;}
 .cal-tourney-name{font-weight: 700; margin-bottom: 4px;}
+.cal-tourney-location{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-bottom: 4px;
+}
 .cal-tourney-tags{display: flex; gap: 6px; margin-bottom: 4px;}
 .cal-tourney-meta{
   font-family:'JetBrains Mono', monospace;
