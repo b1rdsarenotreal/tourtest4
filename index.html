@@ -198,12 +198,15 @@
     </div>
 
     <div class="bracket-subpage" id="bracket-subpage-draw">
-      <div class="bracket-section-title">
-        <h3>Seeds</h3>
+      <div id="normal-draw-heading">
+        <div class="bracket-section-title">
+          <h3>Seeds</h3>
+        </div>
+        <div id="seed-index" class="seed-index-grid"></div>
       </div>
-      <div id="seed-index" class="seed-index-grid"></div>
 
       <div id="bracket-draw-container"></div>
+      <div id="finals-draw-container" class="hidden"></div>
     </div>
 
     <div class="bracket-subpage hidden" id="bracket-subpage-qual">
@@ -214,6 +217,8 @@
     </div>
 
     <div class="bracket-subpage hidden" id="bracket-subpage-entry">
+    <div id="finals-entry-container" class="hidden"></div>
+    <div id="normal-entry-content">
     <div class="bracket-section">
       <div class="bracket-section-title">
         <h3>Auto-Fill Field from Rankings</h3>
@@ -328,6 +333,7 @@
       <div id="bracket-seed-grid" class="bracket-seed-grid hidden"></div>
     </div>
     </div>
+    </div>
   </section>
 
 </main>
@@ -425,6 +431,7 @@
             <option value="WTA1000">WATP 1000</option>
             <option value="WTA500">WATP 500</option>
             <option value="WTA250">WATP 250</option>
+            <option value="FINALS">WATP Finals (Round Robin)</option>
           </select>
         </label>
         <label>Surface
@@ -498,9 +505,10 @@
         <label>Level
           <select id="at-level">
             <option value="GRAND_SLAM">Grand Slam</option>
-            <option value="WTA1000">WTA 1000</option>
-            <option value="WTA500" selected>WTA 500</option>
-            <option value="WTA250">WTA 250</option>
+            <option value="WTA1000">WATP 1000</option>
+            <option value="WTA500" selected>WATP 500</option>
+            <option value="WTA250">WATP 250</option>
+            <option value="FINALS">WATP Finals (Round Robin)</option>
           </select>
         </label>
         <label>Surface
@@ -514,6 +522,8 @@
       <label>Start date
         <input type="date" id="at-date" required>
       </label>
+      <p class="modal-help hidden" id="at-finals-note">WATP Finals is a fixed 8-player, 2-group round robin plus a 4-player knockout — draw size and qualifying don't apply. You'll assign the two groups from the tournament's own page.</p>
+      <div id="at-normal-fields">
       <label>Draw size
         <select id="at-drawsize">
           <option value="28">28</option>
@@ -556,6 +566,7 @@
             <option value="3">3</option>
           </select>
         </label>
+      </div>
       </div>
       <div class="form-actions">
         <button type="button" class="btn btn-ghost" id="at-cancel">Cancel</button>

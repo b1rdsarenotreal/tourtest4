@@ -6,7 +6,7 @@ const STORAGE_KEY = "fortnight-wta-state-v1";
 const ROUND_ORDER = ["R128","R64","R32","R16","QF","SF","F"];
 const ROUND_LABELS = {R128:"R128", R64:"R64", R32:"R32", R16:"R16", QF:"QF", SF:"SF", F:"F", Q1:"Q1", Q2:"Q2", Q3:"Q3"};
 const FRIENDLY_ROUND_NAMES = {R128:"Round of 128", R64:"Round of 64", R32:"Round of 32", R16:"Round of 16", QF:"Quarterfinals", SF:"Semifinals", F:"Final"};
-const LEVEL_LABELS = {GRAND_SLAM:"Grand Slam", WTA1000:"WATP 1000", WTA500:"WATP 500", WTA250:"WATP 250"};
+const LEVEL_LABELS = {GRAND_SLAM:"Grand Slam", WTA1000:"WATP 1000", WTA500:"WATP 500", WTA250:"WATP 250", FINALS:"WATP Finals"};
 const POINTS_TABLE = {
   GRAND_SLAM: {R128:10, R64:45,  R32:90, R16:180, QF:360, SF:720, F:1200, W:2000},
   WTA1000:    {R128:5,  R64:10,  R32:45,  R16:90, QF:180, SF:360, F:600,  W:1000},
@@ -19,6 +19,13 @@ const POINTS_TABLE = {
 const QUALIFYING_POINTS_BASE = {GRAND_SLAM:25, WTA1000:16, WTA500:8, WTA250:5};
 const QUALIFIER_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 const QUAL_ROUND_OPTIONS = [1, 2, 3];
+
+// WATP Finals: 8 players, 2 groups of 4, round robin then a 4-player knockout.
+// These points are BONUS points on top of the normal ranking system — they
+// never take up one of a player's 18 counted results (see computeRankingsAsOf).
+const RR_WIN_POINTS = {0:0, 1:200, 2:400, 3:600};
+const FINALS_CHAMPION_BONUS = 500;
+const FINALS_RUNNERUP_BONUS = 300;
 
 // Common tennis-broadcast 3-letter codes -> ISO 3166-1 alpha-2 (for flag emoji).
 // 2-letter codes are assumed to already be ISO alpha-2 and used directly.
@@ -254,6 +261,105 @@ function qualifyingPointsForResult(level, code, numRounds){
   return 0;
 }
 
+/* ---------------- WATP Finals (round robin + knockout) ---------------- */
+function ensureFinalsGroups(t){
+  if(!Array.isArray(t.groups) || t.groups.length !== 2){
+    t.groups = [{id:"A", name:"Group A", playerIds:[]}, {id:"B", name:"Group B", playerIds:[]}];
+  }
+}
+
+// All 6 unique pairings among a group's (up to 4) players.
+function groupPairings(playerIds){
+  const pairs = [];
+  for(let i = 0; i < playerIds.length; i++){
+    for(let j = i + 1; j < playerIds.length; j++){
+      pairs.push([playerIds[i], playerIds[j]]);
+    }
+  }
+  return pairs;
+}
+
+function finalsGroupMatches(t, groupId){
+  return state.matches.filter(m => m.tournamentId === t.id && m.bracket === "rr" && m.group === groupId);
+}
+
+// Standings with the requested tiebreak order: wins, then head-to-head
+// (only decisive for a clean 2-way tie), then set win%, then game win%.
+function computeGroupStandings(t, group){
+  const stats = new Map();
+  group.playerIds.forEach(pid => stats.set(pid, {
+    pid, wins:0, losses:0, setsWon:0, setsLost:0, gamesWon:0, gamesLost:0, beat: new Set()
+  }));
+  finalsGroupMatches(t, group.id).forEach(m => {
+    const loserId = m.playerAId === m.winnerId ? m.playerBId : m.playerAId;
+    const w = stats.get(m.winnerId), l = stats.get(loserId);
+    if(w){ w.wins++; w.beat.add(loserId); }
+    if(l) l.losses++;
+    (m.sets || []).forEach(s => {
+      const winnerIsA = m.playerAId === m.winnerId;
+      const wGames = winnerIsA ? s.a : s.b, lGames = winnerIsA ? s.b : s.a;
+      if(w){ w.gamesWon += wGames; w.gamesLost += lGames; if(wGames > lGames) w.setsWon++; else w.setsLost++; }
+      if(l){ l.gamesWon += lGames; l.gamesLost += wGames; if(lGames > wGames) l.setsWon++; else l.setsLost++; }
+    });
+  });
+
+  const rows = group.playerIds.map(pid => stats.get(pid));
+  const pct = (won, lost) => (won + lost) > 0 ? won / (won + lost) : 0;
+
+  rows.sort((a, b) => {
+    if(b.wins !== a.wins) return b.wins - a.wins;
+    // Head-to-head only breaks a clean 2-way tie — a 3+-way tie on wins
+    // falls straight through to set% then game% instead.
+    const tiedAtThisWinCount = rows.filter(r => r.wins === a.wins).length;
+    if(tiedAtThisWinCount === 2){
+      if(a.beat.has(b.pid)) return -1;
+      if(b.beat.has(a.pid)) return 1;
+    }
+    const setPctDiff = pct(b.setsWon, b.setsLost) - pct(a.setsWon, a.setsLost);
+    if(setPctDiff !== 0) return setPctDiff;
+    return pct(b.gamesWon, b.gamesLost) - pct(a.gamesWon, a.gamesLost);
+  });
+  return rows;
+}
+
+function finalsGroupStageComplete(t){
+  return t.groups.every(g => g.playerIds.length === 4 && finalsGroupMatches(t, g.id).length === 6);
+}
+
+// Cross-pairs the top 2 of each group (A1-v-B2, B1-v-A2) — standard so group
+// winners don't immediately face the other group's best runner-up.
+function getFinalsSemifinalPairing(t){
+  if(!finalsGroupStageComplete(t)) return null;
+  const standingsA = computeGroupStandings(t, t.groups[0]);
+  const standingsB = computeGroupStandings(t, t.groups[1]);
+  return [
+    {a: standingsA[0].pid, b: standingsB[1].pid},
+    {a: standingsB[0].pid, b: standingsA[1].pid}
+  ];
+}
+
+// Bonus points only — never touches the 18-counted-results system.
+function computeFinalsBonusPoints(t){
+  const bonus = new Map();
+  const winCounts = new Map();
+  (t.groups || []).forEach(g => g.playerIds.forEach(pid => winCounts.set(pid, 0)));
+  (t.groups || []).forEach(g => {
+    finalsGroupMatches(t, g.id).forEach(m => {
+      if(winCounts.has(m.winnerId)) winCounts.set(m.winnerId, winCounts.get(m.winnerId) + 1);
+    });
+  });
+  winCounts.forEach((wins, pid) => bonus.set(pid, RR_WIN_POINTS[wins] || 0));
+
+  const finalMatch = state.matches.find(m => m.tournamentId === t.id && (m.bracket||"main") === "main" && m.round === "F");
+  if(finalMatch){
+    const championId = finalMatch.winnerId;
+    const runnerUpId = finalMatch.playerAId === championId ? finalMatch.playerBId : finalMatch.playerAId;
+    bonus.set(championId, (bonus.get(championId) || 0) + FINALS_CHAMPION_BONUS);
+    bonus.set(runnerUpId, (bonus.get(runnerUpId) || 0) + FINALS_RUNNERUP_BONUS);
+  }
+  return bonus;
+}
+
 // Rankings for a given year (or null = all-time)
 function computeRankings(year){
   const totals = new Map(); // playerId -> {points, titles}
@@ -264,9 +370,16 @@ function computeRankings(year){
     results.forEach((res, pid) => {
       const entry = totals.get(pid);
       if(!entry) return;
-      entry.points += pointsForResult(t.level, res.code);
+      entry.points += pointsForResult(t.level, res.code); // 0 for FINALS — no entry in POINTS_TABLE
       if(res.code === "W") entry.titles += 1;
     });
+    if(t.level === "FINALS"){
+      const bonus = computeFinalsBonusPoints(t);
+      bonus.forEach((pts, pid) => {
+        const entry = totals.get(pid);
+        if(entry) entry.points += pts;
+      });
+    }
     if(t.qualifying && t.qualifying.enabled){
       const qresults = computeQualifyingResults(t);
       qresults.forEach((res, pid) => {
@@ -302,16 +415,37 @@ function computeRankingsAsOf(asOfMs){
   const windowStart = asOfMs - 364 * MS_PER_DAY;
   const totals = new Map();
   const perPlayerResults = new Map(); // playerId -> [{points, mandatory}]
+  const finalsBonus = new Map(); // playerId -> flat bonus, added after the 18-cap is applied
   state.players.forEach(p => {
     totals.set(p.id, {points:0, titles:0});
     perPlayerResults.set(p.id, []);
+    finalsBonus.set(p.id, 0);
   });
 
   state.tournaments.forEach(t => {
     const d = tournamentDateMs(t);
     if(d > asOfMs || d < windowStart) return;
-    const mandatory = MANDATORY_LEVELS.has(t.level);
 
+    if(t.level === "FINALS"){
+      // WATP Finals points are pure bonus — they still award a title for the
+      // champion, but deliberately never enter perPlayerResults, so they can
+      // never occupy (or get squeezed out of) one of a player's 18 counted
+      // results the way a real ranked event would.
+      const results = computeTournamentResults(t.id);
+      results.forEach((res, pid) => {
+        if(res.code === "W"){
+          const entry = totals.get(pid);
+          if(entry) entry.titles += 1;
+        }
+      });
+      const bonus = computeFinalsBonusPoints(t);
+      bonus.forEach((pts, pid) => {
+        if(finalsBonus.has(pid)) finalsBonus.set(pid, finalsBonus.get(pid) + pts);
+      });
+      return;
+    }
+
+    const mandatory = MANDATORY_LEVELS.has(t.level);
     const results = computeTournamentResults(t.id);
     results.forEach((res, pid) => {
       const entry = totals.get(pid);
@@ -333,7 +467,7 @@ function computeRankingsAsOf(asOfMs){
   perPlayerResults.forEach((results, pid) => {
     const entry = totals.get(pid);
     if(!entry) return;
-    entry.points = sumCountedResults(results);
+    entry.points = sumCountedResults(results) + (finalsBonus.get(pid) || 0);
   });
 
   return totals;
@@ -1346,9 +1480,330 @@ function switchBracketSubTab(tab){
   }
 }
 
+/* ---------------- WATP Finals UI ---------------- */
+function renderFinalsBracketPage(t){
+  ensureFinalsGroups(t);
+
+  const head = $("#bracket-head");
+  head.innerHTML = "";
+  head.appendChild(el("div", {}, [
+    el("h2", {}, [t.name]),
+    el("div", {class:"profile-meta"}, [
+      (t.location ? t.location + " · " : "") + "WATP Finals · " + t.surface + " · " + (t.startDate || t.year) +
+      " · 8 players, round robin + knockout"
+    ])
+  ]));
+  const clearBtn = el("button", {class:"btn btn-small btn-danger"}, ["Clear All Results"]);
+  clearBtn.addEventListener("click", () => {
+    const count = matchesForTournament(t.id).length;
+    if(count === 0) return;
+    if(confirm("Clear all " + count + " recorded result" + (count===1?"":"s") + " for " + t.name + "? Groups stay intact. This can't be undone.")){
+      state.matches = state.matches.filter(m => m.tournamentId !== t.id);
+      saveState();
+      renderFinalsDraw(t);
+      renderRankings();
+    }
+  });
+  head.appendChild(el("div", {class:"controls"}, [clearBtn]));
+
+  $("#normal-draw-heading").classList.add("hidden");
+  $("#bracket-draw-container").classList.add("hidden");
+  $("#finals-draw-container").classList.remove("hidden");
+  $("#normal-entry-content").classList.add("hidden");
+  $("#finals-entry-container").classList.remove("hidden");
+  $("#bracket-subnav-qual").classList.add("hidden");
+  if(bracketSubTab === "qual") switchBracketSubTab("draw");
+
+  renderFinalsGroupSetup(t);
+  renderFinalsDraw(t);
+}
+
+function renderFinalsGroupSetup(t){
+  const container = $("#finals-entry-container");
+  container.innerHTML = "";
+  container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, ["Groups"])]));
+  container.appendChild(el("p", {class:"modal-help"}, ["Assign exactly 4 players to each group. Once both are full, switch to the Draw tab to enter round robin results — the semifinals and final unlock automatically once the group stage finishes."]));
+
+  t.groups.forEach(g => {
+    const section = el("div", {class:"bracket-section"});
+    section.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, [g.name + " (" + g.playerIds.length + "/4)"])]));
+
+    const pickerWrap = el("div", {class:"picker-wrap"});
+    const full = g.playerIds.length >= 4;
+    const input = el("input", {type:"text", class:"picker-input", autocomplete:"off", placeholder: full ? "Group full" : "Search player to add…", "data-finals-group-search": g.id});
+    if(full) input.disabled = true;
+    pickerWrap.appendChild(input);
+    pickerWrap.appendChild(el("div", {class:"picker-suggestions hidden", "data-finals-group-suggestions": g.id}));
+    section.appendChild(pickerWrap);
+
+    const chipsWrap = el("div", {class:"entrant-chips"});
+    const players = g.playerIds.map(pid => playerById(pid)).filter(Boolean);
+    if(players.length === 0){
+      chipsWrap.appendChild(el("p", {class:"picker-empty-note"}, ["No players added yet."]));
+    } else {
+      players.forEach(p => {
+        const chip = el("span", {class:"entrant-chip", html: playerNameHTML(p)});
+        chip.appendChild(el("button", {type:"button", class:"entrant-chip-remove", "data-finals-group-remove": g.id + "|" + p.id}, ["\u00d7"]));
+        chipsWrap.appendChild(chip);
+      });
+    }
+    section.appendChild(chipsWrap);
+    container.appendChild(section);
+  });
+}
+
+function handleFinalsGroupSearchInput(e){
+  const groupId = e.target.dataset.finalsGroupSearch;
+  if(!groupId) return;
+  const t = tournamentById(currentBracketTournamentId);
+  if(!t) return;
+  const query = e.target.value;
+  const suggestionsEl = document.querySelector('[data-finals-group-suggestions="' + groupId + '"]');
+  if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
+  const usedIds = new Set(t.groups.flatMap(g => g.playerIds));
+  const results = state.players.filter(p => !usedIds.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
+  suggestionsEl.innerHTML = results.length
+    ? results.map(p => '<button type="button" class="picker-option" data-finals-group-pick="' + groupId + '|' + p.id + '">' + playerNameHTML(p) + '</button>').join("")
+    : '<div class="picker-empty">No match</div>';
+  suggestionsEl.classList.remove("hidden");
+}
+
+function handleFinalsEntryClick(e){
+  const t = tournamentById(currentBracketTournamentId);
+  if(!t) return;
+  const pickBtn = e.target.closest("[data-finals-group-pick]");
+  if(pickBtn){
+    const [groupId, pid] = pickBtn.dataset.finalsGroupPick.split("|");
+    const group = t.groups.find(g => g.id === groupId);
+    if(group && group.playerIds.length < 4 && !group.playerIds.includes(pid)){
+      group.playerIds.push(pid);
+      saveState();
+      renderFinalsGroupSetup(t);
+      renderFinalsDraw(t);
+    }
+    return;
+  }
+  const rmBtn = e.target.closest("[data-finals-group-remove]");
+  if(rmBtn){
+    const [groupId, pid] = rmBtn.dataset.finalsGroupRemove.split("|");
+    const group = t.groups.find(g => g.id === groupId);
+    if(group){
+      group.playerIds = group.playerIds.filter(id => id !== pid);
+      state.matches = state.matches.filter(m => !(m.tournamentId === t.id && (m.playerAId === pid || m.playerBId === pid)));
+      saveState();
+      renderFinalsGroupSetup(t);
+      renderFinalsDraw(t);
+      renderRankings();
+    }
+  }
+}
+
+function groupStandingsHTML(t, g){
+  const rows = computeGroupStandings(t, g);
+  let html = '<table class="data-table rr-standings"><thead><tr><th>Player</th><th>W</th><th>L</th><th>Sets</th><th>Games</th></tr></thead><tbody>';
+  rows.forEach((r, i) => {
+    const p = playerById(r.pid);
+    html += '<tr' + (i < 2 ? ' class="rr-advancing"' : '') + '>' +
+      '<td>' + (p ? playerLinkHTML(p) : "?") + '</td>' +
+      '<td>' + r.wins + '</td>' + '<td>' + r.losses + '</td>' +
+      '<td>' + r.setsWon + '-' + r.setsLost + '</td>' +
+      '<td>' + r.gamesWon + '-' + r.gamesLost + '</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function buildFinalsScoreForm(onSave){
+  const form = el("div", {class:"bracket-match-form"});
+  const setRow = el("div", {class:"bracket-sets-row"});
+  const setInputs = [];
+  for(let i = 1; i <= 3; i++){
+    const box = el("div", {class:"set-box"});
+    box.appendChild(el("span", {}, ["S" + i]));
+    const inner = el("div", {style:"display:flex;gap:2px;"});
+    const a = el("input", {type:"number", min:"0", max:"30"});
+    const b = el("input", {type:"number", min:"0", max:"30"});
+    inner.appendChild(a); inner.appendChild(b);
+    box.appendChild(inner);
+    setRow.appendChild(box);
+    setInputs.push({a, b});
+  }
+  form.appendChild(setRow);
+  const errMsg = el("div", {class:"form-msg"}, []);
+  form.appendChild(errMsg);
+  function evaluateAndMaybeSave(){
+    errMsg.textContent = "";
+    let sets = [];
+    for(const pair of setInputs){
+      const av = pair.a.value, bv = pair.b.value;
+      if(av === "" && bv === "") continue;
+      if(av === "" || bv === "") return;
+      const an = Number(av), bn = Number(bv);
+      if(an === bn){ errMsg.textContent = "A set can't end in a tie."; return; }
+      sets.push({a: an, b: bn});
+    }
+    if(sets.length === 0) return;
+    let aSets = 0, bSets = 0;
+    sets.forEach(s => { if(s.a > s.b) aSets++; else bSets++; });
+    if(aSets < 2 && bSets < 2) return;
+    onSave(aSets > bSets, sets);
+  }
+  setInputs.forEach(pair => {
+    pair.a.addEventListener("input", evaluateAndMaybeSave);
+    pair.b.addEventListener("input", evaluateAndMaybeSave);
+  });
+  return form;
+}
+
+function buildRRMatchCard(t, g, slotIdx, pair){
+  const existingMatch = state.matches.find(m => m.tournamentId === t.id && m.bracket === "rr" && m.group === g.id && m.slot === slotIdx);
+  const pA = playerById(pair[0]), pB = playerById(pair[1]);
+  const card = el("div", {class:"bracket-match status-" + (existingMatch ? "played" : "ready")});
+  const body = el("div", {class:"bracket-match-body"});
+  const names = el("div", {class:"bracket-match-names"});
+  [[pA, pair[0]], [pB, pair[1]]].forEach(([p, pid]) => {
+    const isWinner = existingMatch && existingMatch.winnerId === pid;
+    const row = el("div", {class:"bracket-slot" + (isWinner ? " slot-winner" : "")});
+    row.appendChild(el("span", {class:"slot-name", html: p ? playerLinkHTML(p) : "?"}));
+    names.appendChild(row);
+  });
+  body.appendChild(names);
+  if(existingMatch) body.appendChild(el("div", {class:"bracket-match-score", html: renderScoreboardHTML(existingMatch)}));
+  card.appendChild(body);
+
+  if(existingMatch){
+    const clearX = el("button", {type:"button", class:"clear-x", title:"Clear result"}, ["\u00d7"]);
+    clearX.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if(confirm("Clear this result?")){
+        state.matches = state.matches.filter(m => m.id !== existingMatch.id);
+        saveState();
+        renderFinalsDraw(t);
+        renderRankings();
+      }
+    });
+    card.appendChild(clearX);
+  } else {
+    card.appendChild(buildFinalsScoreForm((aWon, sets) => {
+      state.matches.push({
+        id: uid("m"), tournamentId: t.id, bracket:"rr", group: g.id, round:"RR", slot: slotIdx,
+        playerAId: pair[0], playerBId: pair[1], winnerId: aWon ? pair[0] : pair[1],
+        walkover:false, sets, createdAt: Date.now()
+      });
+      saveState();
+      renderFinalsDraw(t);
+      renderRankings();
+    }));
+  }
+  return card;
+}
+
+function buildKnockoutMatchCard(t, round, slot, pidA, pidB){
+  const existingMatch = state.matches.find(m => m.tournamentId === t.id && (m.bracket||"main") === "main" && m.round === round && m.slot === slot);
+  const pA = pidA ? playerById(pidA) : null, pB = pidB ? playerById(pidB) : null;
+  const card = el("div", {class:"bracket-match status-" + (existingMatch ? "played" : "ready")});
+  const body = el("div", {class:"bracket-match-body"});
+  const names = el("div", {class:"bracket-match-names"});
+  [[pA, pidA], [pB, pidB]].forEach(([p, pid]) => {
+    const isWinner = existingMatch && existingMatch.winnerId === pid;
+    const row = el("div", {class:"bracket-slot" + (isWinner ? " slot-winner" : "")});
+    row.appendChild(el("span", {class:"slot-name", html: p ? playerLinkHTML(p) : "TBD"}));
+    names.appendChild(row);
+  });
+  body.appendChild(names);
+  if(existingMatch) body.appendChild(el("div", {class:"bracket-match-score", html: renderScoreboardHTML(existingMatch)}));
+  card.appendChild(body);
+
+  if(existingMatch){
+    const clearX = el("button", {type:"button", class:"clear-x", title:"Clear result"}, ["\u00d7"]);
+    clearX.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if(confirm("Clear this result?" + (round === "SF" ? " The Final will be cleared too." : ""))){
+        state.matches = state.matches.filter(m => !(m.tournamentId === t.id && (m.bracket||"main") === "main" && m.round === round && m.slot === slot));
+        if(round === "SF"){
+          state.matches = state.matches.filter(m => !(m.tournamentId === t.id && (m.bracket||"main") === "main" && m.round === "F"));
+        }
+        saveState();
+        renderFinalsDraw(t);
+        renderRankings();
+      }
+    });
+    card.appendChild(clearX);
+  } else if(pA && pB){
+    card.appendChild(buildFinalsScoreForm((aWon, sets) => {
+      state.matches.push({
+        id: uid("m"), tournamentId: t.id, bracket:"main", round, slot,
+        playerAId: pidA, playerBId: pidB, winnerId: aWon ? pidA : pidB,
+        walkover:false, sets, createdAt: Date.now()
+      });
+      saveState();
+      renderFinalsDraw(t);
+      renderRankings();
+    }));
+  } else {
+    card.appendChild(el("p", {class:"picker-empty-note", style:"padding:8px 10px;"}, ["Waiting on the group stage."]));
+  }
+  return card;
+}
+
+function renderFinalsDraw(t){
+  const container = $("#finals-draw-container");
+  container.innerHTML = "";
+
+  if(t.groups[0].playerIds.length < 4 || t.groups[1].playerIds.length < 4){
+    container.appendChild(el("p", {class:"picker-empty-note"}, ["Add 4 players to each group (Entry List tab) to begin."]));
+    return;
+  }
+
+  t.groups.forEach(g => {
+    container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, [g.name])]));
+    container.appendChild(el("div", {html: groupStandingsHTML(t, g)}));
+    const matchGrid = el("div", {class:"rr-matches-grid"});
+    groupPairings(g.playerIds).forEach((pair, idx) => matchGrid.appendChild(buildRRMatchCard(t, g, idx, pair)));
+    container.appendChild(matchGrid);
+  });
+
+  container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, ["Knockout"])]));
+  const pairing = getFinalsSemifinalPairing(t);
+  if(!pairing){
+    container.appendChild(el("p", {class:"picker-empty-note"}, ["Finish all 12 round robin matches (6 per group) to set the semifinals."]));
+    return;
+  }
+  const knockout = el("div", {class:"finals-knockout"});
+  const sfCol = el("div", {class:"finals-knockout-col"});
+  sfCol.appendChild(el("div", {class:"bracket-round-title"}, ["Semifinals"]));
+  const sfWinners = [];
+  pairing.forEach((pair, idx) => {
+    sfCol.appendChild(buildKnockoutMatchCard(t, "SF", idx, pair.a, pair.b));
+    const sfMatch = state.matches.find(m => m.tournamentId === t.id && (m.bracket||"main") === "main" && m.round === "SF" && m.slot === idx);
+    if(sfMatch) sfWinners.push(sfMatch.winnerId);
+  });
+  knockout.appendChild(sfCol);
+
+  const fCol = el("div", {class:"finals-knockout-col"});
+  fCol.appendChild(el("div", {class:"bracket-round-title"}, ["Final"]));
+  fCol.appendChild(buildKnockoutMatchCard(t, "F", 0, sfWinners[0] || null, sfWinners[1] || null));
+  knockout.appendChild(fCol);
+
+  container.appendChild(knockout);
+}
+
 function renderBracketPage(){
   const t = tournamentById(currentBracketTournamentId);
   if(!t){ closeBracket(); return; }
+
+  if(t.level === "FINALS"){
+    renderFinalsBracketPage(t);
+    return;
+  }
+
+  $("#normal-draw-heading").classList.remove("hidden");
+  $("#bracket-draw-container").classList.remove("hidden");
+  $("#finals-draw-container").classList.add("hidden");
+  $("#normal-entry-content").classList.remove("hidden");
+  $("#finals-entry-container").classList.add("hidden");
+
   ensureBracketEntries(t);
   ensureQualifyingEntries(t);
   const cap = capacityOf(t.drawSize);
@@ -2858,7 +3313,12 @@ function handleBulkAdd(ev){
 }
 
 function openAddTournament(){ $("#add-tournament-backdrop").classList.remove("hidden"); $("#at-name").focus(); }
-function closeAddTournament(){ $("#add-tournament-backdrop").classList.add("hidden"); $("#add-tournament-form").reset(); }
+function closeAddTournament(){
+  $("#add-tournament-backdrop").classList.add("hidden");
+  $("#add-tournament-form").reset();
+  $("#at-normal-fields").classList.remove("hidden");
+  $("#at-finals-note").classList.add("hidden");
+}
 
 function handleAddPlayer(ev){
   ev.preventDefault();
@@ -2948,6 +3408,21 @@ function handleAddTournament(ev){
   const year = new Date(startDate + "T00:00:00").getFullYear();
   const level = $("#at-level").value;
   const surface = $("#at-surface").value;
+
+  if(level === "FINALS"){
+    state.tournaments.push({
+      id: uid("t"), name, location, level, surface, year, startDate, drawSize: 8,
+      bracketEntries: [], seeds: [], unseededEntrants: [],
+      qualifying: {enabled:false, numQualifiers:8, numRounds:2, entrants:[], bracketEntries:[]},
+      groups: [{id:"A", name:"Group A", playerIds:[]}, {id:"B", name:"Group B", playerIds:[]}],
+      createdAt: Date.now()
+    });
+    saveState();
+    closeAddTournament();
+    renderTournaments();
+    return;
+  }
+
   const drawSize = Number($("#at-drawsize").value) || 32;
   const qualEnabled = $("#at-qual-enabled").checked;
   const qualNum = Number($("#at-qual-numqualifiers").value) || 8;
@@ -3122,6 +3597,11 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#at-qual-enabled").addEventListener("change", (e) => {
     $("#at-qual-fields").classList.toggle("hidden", !e.target.checked);
   });
+  $("#at-level").addEventListener("change", (e) => {
+    const isFinals = e.target.value === "FINALS";
+    $("#at-normal-fields").classList.toggle("hidden", isFinals);
+    $("#at-finals-note").classList.toggle("hidden", !isFinals);
+  });
 
   $("#open-add-bye-week").addEventListener("click", openAddByeWeek);
   $("#bw-cancel").addEventListener("click", closeAddByeWeek);
@@ -3158,6 +3638,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#bracket-autofill-qual").addEventListener("click", handleAutofillQual);
   $("#entry-list-body").addEventListener("input", handleEntryListSearchInput);
   $("#entry-list-body").addEventListener("click", handleEntryListClick);
+  $("#finals-entry-container").addEventListener("input", handleFinalsGroupSearchInput);
+  $("#finals-entry-container").addEventListener("click", handleFinalsEntryClick);
   $("#entry-list-process").addEventListener("click", handleProcessEntryList);
 
   document.addEventListener("click", (e) => {

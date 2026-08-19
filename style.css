@@ -1028,6 +1028,32 @@ form textarea{
 }
 .cal-bye-name{color: var(--ink-soft); font-style: italic;}
 
+/* ---------------- WATP Finals (round robin + knockout) ---------------- */
+.rr-standings{margin-bottom: 16px;}
+.rr-standings tr.rr-advancing{background: var(--paper-2); font-weight: 700;}
+.rr-standings tr.rr-advancing td:first-child{border-left: 3px solid var(--grass);}
+.rr-matches-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin-bottom: 28px;
+}
+.rr-matches-grid .bracket-match{position: relative;}
+.finals-knockout{
+  display:flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.finals-knockout-col{
+  display:flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 260px;
+  flex-shrink: 0;
+}
+.finals-knockout-col .bracket-match{position: relative;}
+
 /* ---------------- Rankings results breakdown ---------------- */
 .breakdown-row td{padding: 0 !important; border-bottom: 1px solid var(--line);}
 .breakdown-scroll{
