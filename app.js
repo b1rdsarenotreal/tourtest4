@@ -266,9 +266,68 @@ function ensureFinalsGroups(t){
   if(!Array.isArray(t.groups) || t.groups.length !== 2){
     t.groups = [{id:"A", name:"Group A", playerIds:[]}, {id:"B", name:"Group B", playerIds:[]}];
   }
+  if(!Array.isArray(t.seeds) || t.seeds.length !== 8){
+    const old = Array.isArray(t.seeds) ? t.seeds : [];
+    t.seeds = new Array(8).fill(null).map((_, i) => old[i] || null);
+  }
 }
 
-// All 6 unique pairings among a group's (up to 4) players.
+// The exact 3-day schedule used by the real tour finals: each entry is a
+// pair of within-group positions (0 = that group's top seed, 3 = its lowest).
+// 4v2, 1v3 / 2v1, 3v4 / 4v1, 2v3 — covers all 6 pairings exactly once.
+const FINALS_DAY_SCHEDULE = [
+  {label:"Day 1", pairs:[[3,1],[0,2]]},
+  {label:"Day 2", pairs:[[1,0],[2,3]]},
+  {label:"Day 3", pairs:[[3,0],[1,2]]}
+];
+
+// Orders a group's 4 players by seed rank (best first), falling back to name
+// for anyone unseeded — this determines who's "position 1..4" for the day schedule.
+function groupPositionOrder(t, group){
+  const seedRankOf = (pid) => {
+    const idx = (t.seeds || []).indexOf(pid);
+    return idx === -1 ? 999 : idx + 1;
+  };
+  return group.playerIds.slice().sort((a, b) => {
+    const ra = seedRankOf(a), rb = seedRankOf(b);
+    if(ra !== rb) return ra - rb;
+    const pa = playerById(a), pb = playerById(b);
+    return (pa ? pa.name : "").localeCompare(pb ? pb.name : "");
+  });
+}
+
+// All 6 pairings for a group, in the fixed Day 1/2/3 schedule order.
+function finalsScheduledPairs(t, group){
+  const ordered = groupPositionOrder(t, group);
+  const pairs = [];
+  FINALS_DAY_SCHEDULE.forEach(d => {
+    d.pairs.forEach(([i, j]) => pairs.push([ordered[i], ordered[j]]));
+  });
+  return pairs;
+}
+
+// Seed 1 anchors Group A, seed 2 anchors Group B, then each remaining pot
+// (3-4, 5-6, 7-8) splits one seed to each group at random.
+function assignFinalsGroupsFromSeeds(t){
+  const seeds = t.seeds || [];
+  if(!seeds[0] || !seeds[1]){
+    alert("Assign at least seed 1 and seed 2 first.");
+    return false;
+  }
+  const groupA = [seeds[0]];
+  const groupB = [seeds[1]];
+  for(let potStart = 2; potStart < 8; potStart += 2){
+    const pair = shuffleArray([seeds[potStart], seeds[potStart + 1]].filter(Boolean));
+    if(pair[0]) groupA.push(pair[0]);
+    if(pair[1]) groupB.push(pair[1]);
+  }
+  t.groups[0].playerIds = groupA;
+  t.groups[1].playerIds = groupB;
+  return true;
+}
+
+// All 6 unique pairings among a group's (up to 4) players — unordered, kept
+// only as a fallback for anywhere pairing order genuinely doesn't matter.
 function groupPairings(playerIds){
   const pairs = [];
   for(let i = 0; i < playerIds.length; i++){
@@ -1521,8 +1580,83 @@ function renderFinalsBracketPage(t){
 function renderFinalsGroupSetup(t){
   const container = $("#finals-entry-container");
   container.innerHTML = "";
+
+  // --- Seeding ---
+  container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, ["Seeding"])]));
+  container.appendChild(el("p", {class:"modal-help"}, ["Assign seeds 1 through 8, or auto-seed empty slots from a ranking week. Seed 1 anchors Group A, seed 2 anchors Group B, and each remaining pot (3-4, 5-6, 7-8) splits one seed to each group at random."]));
+
+  const weeks = getRankingWeeks();
+  const dateOptionsHTML = '<option value="current">Current (Rolling 52-Week)</option>' +
+    weeks.map(w => '<option value="' + w + '">Week of ' + formatWeekDate(w) + '</option>').join("");
+  const dateRow = el("div", {class:"field-row"});
+  const dateLabel = el("label", {}, ["Seed as of"]);
+  const dateSelect = el("select", {id:"finals-seed-date", html: dateOptionsHTML});
+  dateLabel.appendChild(dateSelect);
+  dateRow.appendChild(dateLabel);
+  container.appendChild(dateRow);
+
+  const seedActions = el("div", {class:"form-actions"});
+  const autoSeedBtn = el("button", {type:"button", class:"btn btn-primary"}, ["Auto-Seed Empty Slots"]);
+  const autoGroupBtn = el("button", {type:"button", class:"btn btn-ghost"}, ["Assign Groups from Seeds"]);
+  const seedMsg = el("span", {class:"form-msg"}, []);
+  autoSeedBtn.addEventListener("click", () => {
+    const asOf = rankingDateFromSelectValue(dateSelect.value);
+    const ranks = ranksFromTotals(officialRankingsAsOf(asOf));
+    const used = new Set((t.seeds || []).filter(Boolean));
+    const candidates = state.players
+      .filter(p => !used.has(p.id))
+      .sort((a,b) => (ranks[a.id] || 999999) - (ranks[b.id] || 999999) || a.name.localeCompare(b.name));
+    let ci = 0, filled = 0;
+    for(let i = 0; i < 8; i++){
+      if(!t.seeds[i] && ci < candidates.length){
+        t.seeds[i] = candidates[ci].id;
+        ci++; filled++;
+      }
+    }
+    saveState();
+    seedMsg.textContent = filled > 0 ? "Filled " + filled + " open seed slot" + (filled===1?"":"s") + "." : "All 8 seed slots are already filled.";
+    seedMsg.className = "form-msg ok";
+    renderFinalsGroupSetup(t);
+  });
+  autoGroupBtn.addEventListener("click", () => {
+    const hasResults = matchesForTournament(t.id).length > 0;
+    if(hasResults && !confirm("This re-splits the groups from the current seeds. Since results already exist, they'll be cleared. Continue?")){
+      return;
+    }
+    if(assignFinalsGroupsFromSeeds(t)){
+      if(hasResults) state.matches = state.matches.filter(m => m.tournamentId !== t.id);
+      saveState();
+      renderFinalsGroupSetup(t);
+      renderFinalsDraw(t);
+      renderRankings();
+    }
+  });
+  seedActions.appendChild(autoSeedBtn);
+  seedActions.appendChild(autoGroupBtn);
+  seedActions.appendChild(seedMsg);
+  container.appendChild(seedActions);
+
+  const seedGrid = el("div", {class:"bracket-seed-grid", style:"margin-top:14px;"});
+  for(let i = 0; i < 8; i++){
+    const assignedPlayer = t.seeds[i] ? playerById(t.seeds[i]) : null;
+    const wrap = el("div", {class:"bracket-seed-slot"});
+    wrap.appendChild(el("span", {class:"slot-num"}, ["#" + (i + 1)]));
+    const pickerWrap = el("div", {class:"picker-wrap"});
+    const input = el("input", {type:"text", class:"picker-input", autocomplete:"off", placeholder:"Search player…", "data-finals-seed-rank": i});
+    input.value = assignedPlayer ? assignedPlayer.name : "";
+    pickerWrap.appendChild(input);
+    if(assignedPlayer){
+      pickerWrap.appendChild(el("button", {type:"button", class:"picker-clear", "data-finals-seed-clear": i}, ["\u00d7"]));
+    }
+    pickerWrap.appendChild(el("div", {class:"picker-suggestions hidden", "data-finals-seed-suggestions": i}));
+    wrap.appendChild(pickerWrap);
+    seedGrid.appendChild(wrap);
+  }
+  container.appendChild(seedGrid);
+
+  // --- Groups ---
   container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, ["Groups"])]));
-  container.appendChild(el("p", {class:"modal-help"}, ["Assign exactly 4 players to each group. Once both are full, switch to the Draw tab to enter round robin results — the semifinals and final unlock automatically once the group stage finishes."]));
+  container.appendChild(el("p", {class:"modal-help"}, ["Assign exactly 4 players to each group by hand, or use \"Assign Groups from Seeds\" above. Once both are full, switch to the Draw tab to enter round robin results — the semifinals and final unlock automatically once the group stage finishes."]));
 
   t.groups.forEach(g => {
     const section = el("div", {class:"bracket-section"});
@@ -1553,10 +1687,25 @@ function renderFinalsGroupSetup(t){
 }
 
 function handleFinalsGroupSearchInput(e){
-  const groupId = e.target.dataset.finalsGroupSearch;
-  if(!groupId) return;
   const t = tournamentById(currentBracketTournamentId);
   if(!t) return;
+
+  const seedRank = e.target.dataset.finalsSeedRank;
+  if(seedRank !== undefined){
+    const query = e.target.value;
+    const suggestionsEl = document.querySelector('[data-finals-seed-suggestions="' + seedRank + '"]');
+    if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
+    const usedElsewhere = new Set((t.seeds || []).filter((id, idx) => id && String(idx) !== seedRank));
+    const results = state.players.filter(p => !usedElsewhere.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
+    suggestionsEl.innerHTML = results.length
+      ? results.map(p => '<button type="button" class="picker-option" data-finals-seed-pick="' + seedRank + '|' + p.id + '">' + playerNameHTML(p) + '</button>').join("")
+      : '<div class="picker-empty">No match</div>';
+    suggestionsEl.classList.remove("hidden");
+    return;
+  }
+
+  const groupId = e.target.dataset.finalsGroupSearch;
+  if(!groupId) return;
   const query = e.target.value;
   const suggestionsEl = document.querySelector('[data-finals-group-suggestions="' + groupId + '"]');
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
@@ -1571,6 +1720,23 @@ function handleFinalsGroupSearchInput(e){
 function handleFinalsEntryClick(e){
   const t = tournamentById(currentBracketTournamentId);
   if(!t) return;
+
+  const seedPickBtn = e.target.closest("[data-finals-seed-pick]");
+  if(seedPickBtn){
+    const [rankStr, pid] = seedPickBtn.dataset.finalsSeedPick.split("|");
+    t.seeds[Number(rankStr)] = pid;
+    saveState();
+    renderFinalsGroupSetup(t);
+    return;
+  }
+  const seedClearBtn = e.target.closest("[data-finals-seed-clear]");
+  if(seedClearBtn){
+    t.seeds[Number(seedClearBtn.dataset.finalsSeedClear)] = null;
+    saveState();
+    renderFinalsGroupSetup(t);
+    return;
+  }
+
   const pickBtn = e.target.closest("[data-finals-group-pick]");
   if(pickBtn){
     const [groupId, pid] = pickBtn.dataset.finalsGroupPick.split("|");
@@ -1664,8 +1830,10 @@ function buildRRMatchCard(t, g, slotIdx, pair){
   const names = el("div", {class:"bracket-match-names"});
   [[pA, pair[0]], [pB, pair[1]]].forEach(([p, pid]) => {
     const isWinner = existingMatch && existingMatch.winnerId === pid;
+    const seedNum = seedNumberForPlayer(t, pid);
+    const badge = seedNum ? '<span class="seed-badge">' + seedNum + '</span>' : "";
     const row = el("div", {class:"bracket-slot" + (isWinner ? " slot-winner" : "")});
-    row.appendChild(el("span", {class:"slot-name", html: p ? playerLinkHTML(p) : "?"}));
+    row.appendChild(el("span", {class:"slot-name", html: badge + (p ? playerLinkHTML(p) : "?")}));
     names.appendChild(row);
   });
   body.appendChild(names);
@@ -1707,8 +1875,10 @@ function buildKnockoutMatchCard(t, round, slot, pidA, pidB){
   const names = el("div", {class:"bracket-match-names"});
   [[pA, pidA], [pB, pidB]].forEach(([p, pid]) => {
     const isWinner = existingMatch && existingMatch.winnerId === pid;
+    const seedNum = pid ? seedNumberForPlayer(t, pid) : null;
+    const badge = seedNum ? '<span class="seed-badge">' + seedNum + '</span>' : "";
     const row = el("div", {class:"bracket-slot" + (isWinner ? " slot-winner" : "")});
-    row.appendChild(el("span", {class:"slot-name", html: p ? playerLinkHTML(p) : "TBD"}));
+    row.appendChild(el("span", {class:"slot-name", html: p ? (badge + playerLinkHTML(p)) : "TBD"}));
     names.appendChild(row);
   });
   body.appendChild(names);
@@ -1759,9 +1929,17 @@ function renderFinalsDraw(t){
   t.groups.forEach(g => {
     container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, [g.name])]));
     container.appendChild(el("div", {html: groupStandingsHTML(t, g)}));
-    const matchGrid = el("div", {class:"rr-matches-grid"});
-    groupPairings(g.playerIds).forEach((pair, idx) => matchGrid.appendChild(buildRRMatchCard(t, g, idx, pair)));
-    container.appendChild(matchGrid);
+
+    const pairs = finalsScheduledPairs(t, g);
+    FINALS_DAY_SCHEDULE.forEach((d, dayIdx) => {
+      container.appendChild(el("div", {class:"rr-day-heading"}, [d.label]));
+      const matchGrid = el("div", {class:"rr-matches-grid"});
+      d.pairs.forEach((_, i) => {
+        const slotIdx = dayIdx * 2 + i;
+        matchGrid.appendChild(buildRRMatchCard(t, g, slotIdx, pairs[slotIdx]));
+      });
+      container.appendChild(matchGrid);
+    });
   });
 
   container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, ["Knockout"])]));

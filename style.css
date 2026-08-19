@@ -1032,11 +1032,19 @@ form textarea{
 .rr-standings{margin-bottom: 16px;}
 .rr-standings tr.rr-advancing{background: var(--paper-2); font-weight: 700;}
 .rr-standings tr.rr-advancing td:first-child{border-left: 3px solid var(--grass);}
+.rr-day-heading{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  margin: 4px 0 8px;
+}
 .rr-matches-grid{
   display:grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 10px;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 .rr-matches-grid .bracket-match{position: relative;}
 .finals-knockout{
