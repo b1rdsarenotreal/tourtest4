@@ -506,21 +506,35 @@ function computeRankingsAsOf(asOfMs){
 
     const mandatory = MANDATORY_LEVELS.has(t.level);
     const results = computeTournamentResults(t.id);
-    results.forEach((res, pid) => {
+    const qresults = (t.qualifying && t.qualifying.enabled) ? computeQualifyingResults(t) : new Map();
+
+    // Qualifying isn't its own counted result anymore — it's bonus points
+    // folded straight into whatever this SAME tournament's main-draw result
+    // is worth, so it only ever occupies the one slot the tournament itself
+    // already uses (or none at all, if they qualified but the main draw
+    // hasn't happened/wasn't recorded).
+    const combinedPlayerIds = new Set([...results.keys(), ...qresults.keys()]);
+    combinedPlayerIds.forEach(pid => {
       const entry = totals.get(pid);
       if(!entry) return;
-      if(res.code === "W") entry.titles += 1;
-      perPlayerResults.get(pid).push({points: pointsForResult(t.level, res.code), mandatory});
+      const mainRes = results.get(pid);
+      const qRes = qresults.get(pid);
+      let points = 0;
+      if(mainRes){
+        points += pointsForResult(t.level, mainRes.code);
+        if(mainRes.code === "W") entry.titles += 1;
+      }
+      if(qRes){
+        points += qualifyingPointsForResult(t.level, qRes.code, t.qualifying.numRounds);
+      }
+      // Anyone who actually played the main draw always gets an entry (even
+      // worth 0 points, matching prior behavior). Someone who only played
+      // qualifying and scored nothing there gets no entry at all — no point
+      // wasting a slot on a result worth zero.
+      if(mainRes || points > 0){
+        perPlayerResults.get(pid).push({points, mandatory});
+      }
     });
-
-    if(t.qualifying && t.qualifying.enabled){
-      const qresults = computeQualifyingResults(t);
-      qresults.forEach((res, pid) => {
-        if(!perPlayerResults.has(pid)) return;
-        const pts = qualifyingPointsForResult(t.level, res.code, t.qualifying.numRounds);
-        if(pts > 0) perPlayerResults.get(pid).push({points: pts, mandatory: false});
-      });
-    }
   });
 
   perPlayerResults.forEach((results, pid) => {
@@ -730,25 +744,27 @@ function computePlayerResultBreakdown(playerId, asOfMs){
     if(d > asOfMs || d < windowStart) return;
     const mandatory = MANDATORY_LEVELS.has(t.level);
 
-    const res = computeTournamentResults(t.id).get(playerId);
-    if(res){
-      entries.push({
-        tournamentId: t.id, tournamentName: t.name, level: t.level, date: d,
-        code: res.code, label: res.label, points: pointsForResult(t.level, res.code),
-        mandatory, isQualifying: false
-      });
+    const mainRes = computeTournamentResults(t.id).get(playerId);
+    const qRes = (t.qualifying && t.qualifying.enabled) ? computeQualifyingResults(t).get(playerId) : null;
+    if(!mainRes && !qRes) return;
+
+    let points = 0, code, label, isQualifying = false;
+    if(mainRes){
+      points += pointsForResult(t.level, mainRes.code);
+      code = mainRes.code; label = mainRes.label;
     }
-    if(t.qualifying && t.qualifying.enabled){
-      const qres = computeQualifyingResults(t).get(playerId);
-      if(qres){
-        const pts = qualifyingPointsForResult(t.level, qres.code, t.qualifying.numRounds);
-        entries.push({
-          tournamentId: t.id, tournamentName: t.name + " (Q)", level: t.level, date: d,
-          code: qres.code, label: qres.label, points: pts,
-          mandatory: false, isQualifying: true
-        });
-      }
+    if(qRes){
+      points += qualifyingPointsForResult(t.level, qRes.code, t.qualifying.numRounds);
+      if(!mainRes){ code = qRes.code; label = qRes.label; isQualifying = true; }
     }
+    // A qualifying-only entry worth nothing shouldn't waste a slot — same rule as the ranking calc.
+    if(!mainRes && points === 0) return;
+
+    entries.push({
+      tournamentId: t.id, tournamentName: t.name, level: t.level, date: d,
+      code, label, points, mandatory, isQualifying,
+      hadQualifyingBonus: !!mainRes && !!qRes
+    });
   });
   entries.sort((a,b) => a.date - b.date);
 
@@ -802,10 +818,11 @@ function renderBreakdownTableHTML(playerId, asOfMs){
   let bodyCells = "";
   levels.forEach(l => {
     byLevel[l].forEach(e => {
-      const roundLabel = e.code === "W" ? "W" : (e.isQualifying ? e.code : e.code);
+      const roundLabel = e.code === "W" ? "W" : e.code;
       const cls = "breakdown-cell " + resultColorClass(e) + (e.counted ? "" : " not-counted");
+      const qTag = e.hadQualifyingBonus ? '<span class="breakdown-qtag" title="Includes a qualifying bonus">+Q</span>' : "";
       const titleAttr = e.counted ? "Counts toward ranking" : "Didn't count — outside the best " + MAX_COUNTED_RESULTS;
-      bodyCells += '<td class="' + cls + '" title="' + titleAttr + '">' + escapeHtml(roundLabel) + '<span class="breakdown-pts">' + e.points + '</span></td>';
+      bodyCells += '<td class="' + cls + '" title="' + titleAttr + '">' + escapeHtml(roundLabel) + qTag + '<span class="breakdown-pts">' + e.points + '</span></td>';
     });
   });
 
@@ -974,17 +991,21 @@ function renderPlayerProfile(playerId){
     const ta = tournamentById(a.tournamentId), tb = tournamentById(b.tournamentId);
     return (tb ? tournamentDateMs(tb) : 0) - (ta ? tournamentDateMs(ta) : 0) || ROUND_ORDER.indexOf(b.round) - ROUND_ORDER.indexOf(a.round);
   });
-  const wins = matches.filter(m => m.winnerId === playerId).length;
-  const losses = matches.length - wins;
+  // Career Win-Loss and surface records are "tour level" stats — qualifying
+  // matches are excluded, same as how the real tour reports it. Recent
+  // Matches below still shows everything, qualifying included, for history.
+  const tourMatches = matches.filter(m => (m.bracket || "main") !== "qual");
+  const wins = tourMatches.filter(m => m.winnerId === playerId).length;
+  const losses = tourMatches.length - wins;
   const latest = getLatestActiveDate();
   const totals = computeRankingsAsOf(latest);
   const stats = totals.get(playerId) || {points:0, titles:0};
   const careerStats = computeRankings(null).get(playerId) || {points:0, titles:0};
   const currentRank = ranksFromTotals(totals)[playerId] || null;
 
-  // surface breakdown
+  // surface breakdown (also tour-level only, excludes qualifying)
   const surfaceStats = {hard:{w:0,l:0}, clay:{w:0,l:0}, grass:{w:0,l:0}};
-  matches.forEach(m => {
+  tourMatches.forEach(m => {
     const t = tournamentById(m.tournamentId);
     if(!t || !surfaceStats[t.surface]) return;
     if(m.winnerId === playerId) surfaceStats[t.surface].w++; else surfaceStats[t.surface].l++;

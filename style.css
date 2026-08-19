@@ -1101,6 +1101,13 @@ form textarea{
   font-weight: 400;
   margin-top: 1px;
 }
+.breakdown-qtag{
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--pink);
+  margin-left: 2px;
+  vertical-align: super;
+}
 .breakdown-cell.not-counted{opacity: 0.4; text-decoration: line-through;}
 .breakdown-total{
   text-align: center;
