@@ -56,6 +56,13 @@ h1,h2,h3{
 }
 .brand{display:flex; align-items:center; gap:12px;}
 .brand-mark{color:var(--ball); font-size: 22px; line-height:1;}
+.header-add-player{
+  flex-shrink: 0;
+  background: var(--ball);
+  border-color: var(--ball);
+  color: white;
+}
+.header-add-player:hover{background: var(--ball-dark); border-color: var(--ball-dark);}
 .brand-text h1{color:var(--paper); font-size: 26px; letter-spacing:0.03em;}
 .brand-text p{
   margin:2px 0 0;

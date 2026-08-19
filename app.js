@@ -3058,6 +3058,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#rankings-year").addEventListener("change", renderRankings);
 
   $("#open-add-player").addEventListener("click", openAddPlayer);
+  $("#header-add-player").addEventListener("click", openAddPlayer);
   $("#ap-cancel").addEventListener("click", closeAddPlayer);
   $("#add-player-form").addEventListener("submit", handleAddPlayer);
   $("#add-player-backdrop").addEventListener("click", (e) => { if(e.target.id === "add-player-backdrop") closeAddPlayer(); });
