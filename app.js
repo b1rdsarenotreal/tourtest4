@@ -755,6 +755,25 @@ function renderPlayers(){
   });
 }
 
+// Every tournament this player reached the final of (won or lost), with the
+// opponent from that specific final match — a quick "career highlights" list.
+function getFinalResultsForPlayer(playerId){
+  const results = [];
+  state.tournaments.forEach(t => {
+    const tRes = computeTournamentResults(t.id).get(playerId);
+    if(!tRes || (tRes.code !== "W" && tRes.code !== "F")) return;
+    const finalMatch = state.matches.find(m =>
+      m.tournamentId === t.id && (m.bracket || "main") === "main" && m.round === "F" &&
+      (m.playerAId === playerId || m.playerBId === playerId)
+    );
+    if(!finalMatch) return;
+    const opponentId = finalMatch.playerAId === playerId ? finalMatch.playerBId : finalMatch.playerAId;
+    results.push({t, isChamp: tRes.code === "W", opponent: playerById(opponentId), match: finalMatch});
+  });
+  results.sort((a,b) => tournamentDateMs(b.t) - tournamentDateMs(a.t));
+  return results;
+}
+
 function renderPlayerProfile(playerId){
   const p = playerById(playerId);
   if(!p) return;
@@ -865,7 +884,7 @@ function renderPlayerProfile(playerId){
   if(matches.length === 0){
     modal.appendChild(el("p", {}, ["No matches recorded yet."]));
   } else {
-    matches.slice(0, 15).forEach(m => {
+    matches.slice(0, 8).forEach(m => {
       const t = tournamentById(m.tournamentId);
       const a = playerById(m.playerAId), b = playerById(m.playerBId);
       const row = el("div", {class:"match-row"}, [
@@ -877,6 +896,28 @@ function renderPlayerProfile(playerId){
         }),
         el("span", {html: renderScoreboardHTML(m)}),
         el("span", {class:"match-tourney"}, [t ? (t.name + " '" + String(t.year).slice(-2)) : ""])
+      ]);
+      modal.appendChild(row);
+    });
+  }
+
+  modal.appendChild(el("div", {class:"profile-section-title"}, ["Final Results"]));
+  const finalResults = getFinalResultsForPlayer(playerId);
+  if(finalResults.length === 0){
+    modal.appendChild(el("p", {}, ["No finals reached yet."]));
+  } else {
+    finalResults.forEach(({t, isChamp, opponent, match}) => {
+      const bracketBtn = el("button", {class:"btn btn-small btn-ghost", "data-open-bracket": t.id}, ["Bracket"]);
+      const row = el("div", {class:"tourney-row"}, [
+        el("span", {class:"level-tag"}, [LEVEL_LABELS[t.level] || t.level]),
+        el("span", {class:"surface-tag surface-" + t.surface}, [t.surface]),
+        el("span", {class:"tourney-name"}, [t.name + " '" + String(t.year).slice(-2)]),
+        el("span", {class:"tourney-champ", html:
+          '<b class="' + (isChamp ? "final-champ" : "final-runnerup") + '">' + (isChamp ? "Champion" : "Runner-up") + '</b>' +
+          ' — ' + (isChamp ? "def. " : "lost to ") + (opponent ? playerLinkHTML(opponent) : "(unknown)")
+        }),
+        el("span", {html: renderScoreboardHTML(match)}),
+        bracketBtn
       ]);
       modal.appendChild(row);
     });

@@ -323,6 +323,8 @@ main.wrap{padding-top: 32px; padding-bottom: 80px;}
   color: var(--ink-soft);
 }
 .tourney-champ b{color: var(--ink);}
+.final-champ{color: var(--grass) !important;}
+.final-runnerup{color: var(--ink-soft) !important;}
 
 /* ---------- Forms ---------- */
 .card.form-card{
