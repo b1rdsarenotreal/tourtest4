@@ -82,6 +82,13 @@
       <p class="empty-sub">Add the first one to get started.</p>
     </div>
     <div class="player-grid" id="players-grid"></div>
+
+    <div id="retired-section" class="hidden">
+      <div class="bracket-section-title">
+        <h3>Retired Players</h3>
+      </div>
+      <div class="player-grid" id="retired-players-grid"></div>
+    </div>
   </section>
 
   <!-- TOURNAMENTS -->
@@ -89,6 +96,9 @@
     <div class="view-head">
       <h2>Tournaments</h2>
       <div class="controls">
+        <label>Year
+          <select id="tournaments-year-filter"></select>
+        </label>
         <button class="btn btn-ghost" id="open-add-bye-week">+ Add Bye Week</button>
         <button class="btn btn-primary" id="open-add-tournament">+ Add Tournament</button>
       </div>

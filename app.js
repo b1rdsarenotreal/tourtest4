@@ -742,8 +742,24 @@ function computePlayerResultBreakdown(playerId, asOfMs){
   state.tournaments.forEach(t => {
     const d = tournamentDateMs(t);
     if(d > asOfMs || d < windowStart) return;
-    const mandatory = MANDATORY_LEVELS.has(t.level);
 
+    if(t.level === "FINALS"){
+      // WATP Finals is pure bonus (see computeRankingsAsOf) — shown here for
+      // visibility only, always counted, and deliberately never enters the
+      // mandatory/optional slot competition below.
+      const mainRes = computeTournamentResults(t.id).get(playerId);
+      const bonusPts = computeFinalsBonusPoints(t).get(playerId) || 0;
+      if(!mainRes && bonusPts === 0) return;
+      entries.push({
+        tournamentId: t.id, tournamentName: t.name, level: t.level, date: d,
+        code: mainRes ? mainRes.code : "RR", label: mainRes ? mainRes.label : "Round Robin",
+        points: bonusPts, mandatory: false, isQualifying: false,
+        hadQualifyingBonus: false, isFinalsBonus: true, counted: true
+      });
+      return;
+    }
+
+    const mandatory = MANDATORY_LEVELS.has(t.level);
     const mainRes = computeTournamentResults(t.id).get(playerId);
     const qRes = (t.qualifying && t.qualifying.enabled) ? computeQualifyingResults(t).get(playerId) : null;
     if(!mainRes && !qRes) return;
@@ -763,17 +779,18 @@ function computePlayerResultBreakdown(playerId, asOfMs){
     entries.push({
       tournamentId: t.id, tournamentName: t.name, level: t.level, date: d,
       code, label, points, mandatory, isQualifying,
-      hadQualifyingBonus: !!mainRes && !!qRes
+      hadQualifyingBonus: !!mainRes && !!qRes, isFinalsBonus: false
     });
   });
   entries.sort((a,b) => a.date - b.date);
 
-  const mandatoryEntries = entries.filter(e => e.mandatory);
-  const optionalEntries = entries.filter(e => !e.mandatory);
+  const cappableEntries = entries.filter(e => !e.isFinalsBonus);
+  const mandatoryEntries = cappableEntries.filter(e => e.mandatory);
+  const optionalEntries = cappableEntries.filter(e => !e.mandatory);
   const optionalSortedDesc = optionalEntries.slice().sort((a,b) => b.points - a.points);
   const remainingSlots = Math.max(0, MAX_COUNTED_RESULTS - mandatoryEntries.length);
   const countedOptional = new Set(optionalSortedDesc.slice(0, remainingSlots));
-  entries.forEach(e => { e.counted = e.mandatory || countedOptional.has(e); });
+  cappableEntries.forEach(e => { e.counted = e.mandatory || countedOptional.has(e); });
 
   const totalPoints = entries.filter(e => e.counted).reduce((s, e) => s + e.points, 0);
   return {entries, totalPoints, tournamentsPlayed: entries.length};
@@ -788,6 +805,7 @@ function abbreviateTournamentName(name){
 }
 
 function resultColorClass(entry){
+  if(entry.isFinalsBonus) return "res-finals";
   if(entry.isQualifying) return "res-qual";
   if(entry.code === "W") return "res-win";
   if(entry.code === "F") return "res-final";
@@ -801,7 +819,7 @@ function renderBreakdownTableHTML(playerId, asOfMs){
   if(entries.length === 0){
     return '<p class="picker-empty-note">No results in this window yet.</p>';
   }
-  const levels = ["GRAND_SLAM", "WTA1000", "WTA500", "WTA250"];
+  const levels = ["GRAND_SLAM", "WTA1000", "WTA500", "WTA250", "FINALS"];
   const byLevel = {};
   levels.forEach(l => { byLevel[l] = entries.filter(e => e.level === l); });
 
@@ -872,6 +890,7 @@ function renderRankings(){
     : "";
 
   const rows = state.players
+    .filter(p => !p.retired)
     .map(p => ({p, stats: totals.get(p.id) || {points:0, titles:0}}))
     .filter(r => r.stats.points > 0)
     .sort((a,b) => b.stats.points - a.stats.points || a.p.name.localeCompare(b.p.name))
@@ -939,17 +958,33 @@ function renderRankings(){
 }
 
 /* ---------------- Players view ---------------- */
+function handleToggleRetire(playerId){
+  const p = playerById(playerId);
+  if(!p) return;
+  p.retired = !p.retired;
+  saveState();
+  // If the profile modal for this player is open, refresh it in place so the
+  // Retire/Unretire button immediately reflects the new state.
+  if(!$("#player-modal-backdrop").classList.contains("hidden")){
+    renderPlayerProfile(playerId);
+  }
+  renderPlayers();
+  renderRankings();
+}
+
 function renderPlayers(){
   const grid = $("#players-grid");
   const empty = $("#players-empty");
+  const activePlayers = state.players.filter(p => !p.retired);
   if(state.players.length === 0){
     grid.innerHTML = "";
     empty.classList.remove("hidden");
+    renderRetiredPlayers();
     return;
   }
   empty.classList.add("hidden");
   const totals = computeRankingsAsOf(getLatestActiveDate());
-  const sorted = [...state.players].sort((a,b) => a.name.localeCompare(b.name));
+  const sorted = [...activePlayers].sort((a,b) => a.name.localeCompare(b.name));
   grid.innerHTML = "";
   sorted.forEach(p => {
     const stats = totals.get(p.id) || {points:0, titles:0};
@@ -960,6 +995,35 @@ function renderPlayers(){
         el("span", {}, [stats.points.toLocaleString() + " pts"])
       ]),
       el("button", {class:"btn btn-small btn-ghost pc-edit-btn", "data-edit-player": p.id}, ["Edit"])
+    ]);
+    grid.appendChild(card);
+  });
+  renderRetiredPlayers();
+}
+
+function renderRetiredPlayers(){
+  const section = $("#retired-section");
+  const grid = $("#retired-players-grid");
+  const retired = state.players.filter(p => p.retired);
+  if(retired.length === 0){
+    section.classList.add("hidden");
+    grid.innerHTML = "";
+    return;
+  }
+  section.classList.remove("hidden");
+  const careerTotals = computeRankings(null);
+  const sorted = retired.slice().sort((a,b) => a.name.localeCompare(b.name));
+  grid.innerHTML = "";
+  sorted.forEach(p => {
+    const peak = computePlayerPeakRank(p.id);
+    const titles = (careerTotals.get(p.id) || {titles:0}).titles;
+    const card = el("div", {class:"player-card retired-card", "data-open-player": p.id}, [
+      el("div", {class:"pc-name", html: playerNameHTML(p)}),
+      el("div", {class:"pc-badges"}, [
+        el("span", {class:"pc-badge"}, [peak ? "Peak No. " + peak : "Unranked"]),
+        el("span", {class:"pc-badge"}, [titles + " title" + (titles === 1 ? "" : "s")])
+      ]),
+      el("button", {class:"btn btn-small btn-primary pc-unretire-btn", "data-toggle-retire": p.id}, ["Unretire"])
     ]);
     grid.appendChild(card);
   });
@@ -1086,6 +1150,18 @@ function grandSlamGridHTML(playerId){
   return html;
 }
 
+// Best (lowest-numbered) rank a player has ever held, across every recorded
+// tour week — used on the profile and the retired-players list.
+function computePlayerPeakRank(playerId){
+  let peak = null;
+  getRankingSnapshotDates().forEach(d => {
+    const rankMap = ranksFromTotals(officialRankingsAsOf(d));
+    const r = rankMap[playerId];
+    if(r && (peak === null || r < peak)) peak = r;
+  });
+  return peak;
+}
+
 function renderPlayerProfile(playerId){
   const p = playerById(playerId);
   if(!p) return;
@@ -1200,7 +1276,7 @@ function renderPlayerProfile(playerId){
   if(tResults.length === 0){
     modal.appendChild(el("p", {}, ["No tournaments played yet."]));
   } else {
-    tResults.forEach(({t, res}) => {
+    tResults.slice(0, 10).forEach(({t, res}) => {
       const bracketBtn = el("button", {class:"btn btn-small btn-ghost", "data-open-bracket": t.id}, ["Bracket"]);
       const row = el("div", {class:"tourney-row"}, [
         el("span", {class:"level-tag"}, [LEVEL_LABELS[t.level] || t.level]),
@@ -1272,6 +1348,7 @@ function renderPlayerProfile(playerId){
   }
 
   modal.appendChild(el("div", {class:"modal-close-row"}, [
+    el("button", {class:"btn btn-small " + (p.retired ? "btn-primary" : "btn-danger"), id:"profile-retire-toggle", "data-toggle-retire": p.id}, [p.retired ? "Unretire" : "Retire"]),
     el("button", {class:"btn btn-ghost", id:"profile-close"}, ["Close"])
   ]));
 
@@ -1346,19 +1423,47 @@ function tournamentCellHTML(t){
     '</div>';
 }
 
+function populateTournamentsYearFilter(){
+  const years = new Set();
+  state.tournaments.forEach(t => years.add(t.year));
+  (state.byeWeeks || []).forEach(bw => years.add(new Date(bw.date + "T00:00:00").getFullYear()));
+  const sorted = Array.from(years).sort((a,b) => b - a);
+  const sel = $("#tournaments-year-filter");
+  const prev = sel.value;
+  sel.innerHTML = '<option value="all">All Years</option>' + sorted.map(y => '<option value="' + y + '">' + y + '</option>').join("");
+  if(prev && (prev === "all" || sorted.some(y => String(y) === prev))) sel.value = prev;
+}
+
 function renderTournaments(){
+  populateTournamentsYearFilter();
+  const yearFilter = $("#tournaments-year-filter").value || "all";
+
   const list = $("#tournaments-list");
   const empty = $("#tournaments-empty");
-  const byeWeeks = state.byeWeeks || [];
-  if(state.tournaments.length === 0 && byeWeeks.length === 0){
+  const allByeWeeks = state.byeWeeks || [];
+
+  if(state.tournaments.length === 0 && allByeWeeks.length === 0){
     list.innerHTML = "";
     empty.classList.remove("hidden");
+    empty.querySelector("p").textContent = "No events scheduled.";
+    empty.querySelector(".empty-sub").textContent = "Add a tournament, then log results for it.";
+    return;
+  }
+
+  const byeWeeks = yearFilter === "all" ? allByeWeeks : allByeWeeks.filter(bw => String(new Date(bw.date + "T00:00:00").getFullYear()) === yearFilter);
+  const tournaments = yearFilter === "all" ? state.tournaments : state.tournaments.filter(t => String(t.year) === yearFilter);
+
+  if(tournaments.length === 0 && byeWeeks.length === 0){
+    list.innerHTML = "";
+    empty.classList.remove("hidden");
+    empty.querySelector("p").textContent = "No events in " + yearFilter + ".";
+    empty.querySelector(".empty-sub").textContent = "Try a different year, or switch back to All Years.";
     return;
   }
   empty.classList.add("hidden");
 
   const byWeek = new Map();
-  state.tournaments.forEach(t => {
+  tournaments.forEach(t => {
     const wk = mondayOf(tournamentDateMs(t));
     if(!byWeek.has(wk)) byWeek.set(wk, []);
     byWeek.get(wk).push({kind:"tournament", data:t});
@@ -1759,7 +1864,7 @@ function renderFinalsGroupSetup(t){
     const ranks = ranksFromTotals(officialRankingsAsOf(asOf));
     const used = new Set((t.seeds || []).filter(Boolean));
     const candidates = state.players
-      .filter(p => !used.has(p.id))
+      .filter(p => !p.retired && !used.has(p.id))
       .sort((a,b) => (ranks[a.id] || 999999) - (ranks[b.id] || 999999) || a.name.localeCompare(b.name));
     let ci = 0, filled = 0;
     for(let i = 0; i < 8; i++){
@@ -1851,7 +1956,7 @@ function handleFinalsGroupSearchInput(e){
     const suggestionsEl = document.querySelector('[data-finals-seed-suggestions="' + seedRank + '"]');
     if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
     const usedElsewhere = new Set((t.seeds || []).filter((id, idx) => id && String(idx) !== seedRank));
-    const results = state.players.filter(p => !usedElsewhere.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
+    const results = state.players.filter(p => !p.retired && !usedElsewhere.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
     suggestionsEl.innerHTML = results.length
       ? results.map(p => '<button type="button" class="picker-option" data-finals-seed-pick="' + seedRank + '|' + p.id + '">' + playerNameHTML(p) + '</button>').join("")
       : '<div class="picker-empty">No match</div>';
@@ -1865,7 +1970,7 @@ function handleFinalsGroupSearchInput(e){
   const suggestionsEl = document.querySelector('[data-finals-group-suggestions="' + groupId + '"]');
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
   const usedIds = new Set(t.groups.flatMap(g => g.playerIds));
-  const results = state.players.filter(p => !usedIds.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
+  const results = state.players.filter(p => !p.retired && !usedIds.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
   suggestionsEl.innerHTML = results.length
     ? results.map(p => '<button type="button" class="picker-option" data-finals-group-pick="' + groupId + '|' + p.id + '">' + playerNameHTML(p) + '</button>').join("")
     : '<div class="picker-empty">No match</div>';
@@ -2269,7 +2374,7 @@ function handleSeedSearchInput(e){
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
   const usedElsewhere = new Set((t.seeds || []).filter((id, idx) => id && idx !== rank));
   const results = state.players
-    .filter(p => !usedElsewhere.has(p.id))
+    .filter(p => !p.retired && !usedElsewhere.has(p.id))
     .filter(p => matchesSearch(p.name, query))
     .slice(0, 8);
   suggestionsEl.innerHTML = results.length
@@ -2347,7 +2452,7 @@ function handleEntrantSearchInput(e){
   const seededIds = new Set((t.seeds || []).filter(Boolean));
   const existingIds = new Set(t.unseededEntrants || []);
   const results = state.players
-    .filter(p => !seededIds.has(p.id) && !existingIds.has(p.id))
+    .filter(p => !p.retired && !seededIds.has(p.id) && !existingIds.has(p.id))
     .filter(p => matchesSearch(p.name, query))
     .slice(0, 8);
   suggestionsEl.innerHTML = results.length
@@ -2448,7 +2553,7 @@ function handleQualEntrantSearchInput(e){
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
   const existingIds = new Set(t.qualifying.entrants || []);
   const results = state.players
-    .filter(p => !existingIds.has(p.id))
+    .filter(p => !p.retired && !existingIds.has(p.id))
     .filter(p => matchesSearch(p.name, query))
     .slice(0, 8);
   suggestionsEl.innerHTML = results.length
@@ -2758,7 +2863,7 @@ function handleAutofillMain(){
   const entryRanks = ranksFromTotals(officialRankingsAsOf(entryDate));
   const alreadyUsed = new Set([...(t.seeds || []).filter(Boolean), ...(t.unseededEntrants || [])]);
   const fieldCandidates = state.players
-    .filter(p => !alreadyUsed.has(p.id))
+    .filter(p => !p.retired && !alreadyUsed.has(p.id))
     .sort((a,b) => (entryRanks[a.id] || 99999) - (entryRanks[b.id] || 99999) || a.name.localeCompare(b.name));
 
   const openSeedSlots = [];
@@ -2798,7 +2903,7 @@ function handleAutofillQual(){
   const usedInMain = new Set([...(t.seeds || []).filter(Boolean), ...(t.unseededEntrants || [])]);
   const usedInQual = new Set(t.qualifying.entrants || []);
   const candidates = state.players
-    .filter(p => !usedInMain.has(p.id) && !usedInQual.has(p.id))
+    .filter(p => !p.retired && !usedInMain.has(p.id) && !usedInQual.has(p.id))
     .sort((a,b) => (entryRanks[a.id] || 99999) - (entryRanks[b.id] || 99999) || a.name.localeCompare(b.name));
 
   const openSlots = Math.max(0, qualSlots - usedInQual.size);
@@ -2861,7 +2966,7 @@ function handleEntryListSearchInput(e){
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
   const existingIds = new Set((t.entryList || []).map(e2 => e2.playerId));
   const results = state.players
-    .filter(p => !existingIds.has(p.id))
+    .filter(p => !p.retired && !existingIds.has(p.id))
     .filter(p => matchesSearch(p.name, query))
     .slice(0, 8);
   suggestionsEl.innerHTML = results.length
@@ -3050,8 +3155,14 @@ function renderBracketRounds(t){
 
   const numSections = round0Count / SECTION_SIZE;
 
-  // "Finals" — the combined view from the section-final round onward.
-  const combinedRounds = rounds.slice(SECTION_INTERNAL_ROUNDS - 1);
+  // "Finals" always starts at Quarterfinals specifically, regardless of draw
+  // size. For a 64-draw that's naturally also where each 16-player section's
+  // own last round lands (QF), so it overlaps there as intended. For a
+  // 128-draw, a 16-player section's own last round is R16, not QF — R16
+  // still shows once, inside its section, but never gets duplicated up into
+  // Finals too.
+  const qfIndex = rounds.findIndex(r => r.round === "QF");
+  const combinedRounds = qfIndex >= 0 ? rounds.slice(qfIndex) : rounds.slice(SECTION_INTERNAL_ROUNDS - 1);
   container.appendChild(el("div", {class:"bracket-section-title"}, [el("h3", {}, ["Finals"])]));
   const finalsWrap = el("div", {class:"bracket-wrap"});
   container.appendChild(finalsWrap);
@@ -4064,6 +4175,7 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#at-finals-note").classList.toggle("hidden", !isFinals);
   });
 
+  $("#tournaments-year-filter").addEventListener("change", renderTournaments);
   $("#open-add-bye-week").addEventListener("click", openAddByeWeek);
   $("#bw-cancel").addEventListener("click", closeAddByeWeek);
   $("#add-byeweek-form").addEventListener("submit", handleAddByeWeek);
@@ -4141,6 +4253,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#player-modal-backdrop").addEventListener("click", (e) => { if(e.target.id === "player-modal-backdrop") closePlayerModal(); });
 
   document.addEventListener("click", (e) => {
+    const retireBtn = e.target.closest("[data-toggle-retire]");
+    if(retireBtn){ handleToggleRetire(retireBtn.dataset.toggleRetire); return; }
     const toggleBtn = e.target.closest("[data-toggle-breakdown]");
     if(toggleBtn){
       const pid = toggleBtn.dataset.toggleBreakdown;

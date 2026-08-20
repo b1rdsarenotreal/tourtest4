@@ -268,6 +268,19 @@ main.wrap{padding-top: 32px; padding-bottom: 80px;}
   color: var(--ink-soft);
   display:flex; justify-content:space-between;
 }
+.player-card.retired-card{background: var(--paper-2);}
+.pc-badges{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;}
+.pc-badge{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 3px 9px;
+}
+.pc-unretire-btn{width: 100%;}
 
 /* ---------- Tournament list ---------- */
 .tourney-year-group{margin-bottom: 28px;}
@@ -699,7 +712,7 @@ form textarea{
   padding-bottom: 6px;
   margin: 20px 0 10px;
 }
-.modal-close-row{display:flex; justify-content:flex-end; margin-top: 20px;}
+.modal-close-row{display:flex; justify-content:space-between; align-items:center; margin-top: 20px;}
 
 /* ---------------- Bracket view ---------------- */
 .back-btn{margin-bottom: 18px;}
@@ -1169,6 +1182,7 @@ form textarea{
 .res-quarter{background: var(--paper-3); color: var(--ink);}
 .res-early{background: var(--paper); color: var(--ink-soft); font-weight: 400;}
 .res-qual{background: #d7e3f0; color: var(--ink-soft);}
+.res-finals{background: var(--pink); color: white;}
 
 /* ---------------- Records page ---------------- */
 .records-grid{
