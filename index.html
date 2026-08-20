@@ -444,26 +444,12 @@
   <div class="modal">
     <form id="edit-slam-history-form">
       <h3>Historical Slam Record</h3>
-      <p class="modal-help">For appearances from before this tracker existed, or from outside this system entirely. These are purely additive — added on top of whatever's actually recorded here, and they never affect rankings or points, only what shows on this page.</p>
+      <p class="modal-help">For appearances from before this tracker existed, or from outside this system entirely. These are purely additive — added on top of whatever's actually recorded here, and they never affect rankings or points, only what shows on this page. Add one row per major — it'll count toward both that major's own filter and Total.</p>
       <label>Player
         <div class="picker-wrap" id="esh-player-picker"></div>
       </label>
-      <div class="field-row">
-        <label>Quarterfinals
-          <input type="number" id="esh-qf" min="0" value="0">
-        </label>
-        <label>Semifinals
-          <input type="number" id="esh-sf" min="0" value="0">
-        </label>
-      </div>
-      <div class="field-row">
-        <label>Finals
-          <input type="number" id="esh-f" min="0" value="0">
-        </label>
-        <label>Titles
-          <input type="number" id="esh-w" min="0" value="0">
-        </label>
-      </div>
+      <div id="esh-rows"></div>
+      <button type="button" class="btn btn-ghost btn-small" id="esh-add-row" style="margin-top:8px;">+ Add Major</button>
       <div class="form-actions">
         <button type="button" class="btn btn-ghost" id="esh-cancel">Cancel</button>
         <button type="submit" class="btn btn-primary">Save</button>

@@ -999,7 +999,7 @@ function gsCellClass(code){
 function computePlayerGrandSlamGrid(playerId){
   const slamTournaments = state.tournaments.filter(t => t.level === "GRAND_SLAM");
   if(slamTournaments.length === 0) return null;
-  const majorNames = Array.from(new Set(slamTournaments.map(t => t.name))).sort();
+  const majorNames = sortMajorNamesByCalendarOrder(Array.from(new Set(slamTournaments.map(t => t.name))));
   const years = Array.from(new Set(slamTournaments.map(t => t.year))).sort((a,b) => a - b);
 
   function tourRecordAt(t){
@@ -1065,7 +1065,7 @@ function grandSlamGridHTML(playerId){
   html += '<th>SR</th><th>W&ndash;L</th><th>Win %</th></tr></thead><tbody>';
 
   data.grid.forEach(row => {
-    html += '<tr><td class="gs-major-name">' + escapeHtml(abbreviateTournamentName(row.name)) + '</td>';
+    html += '<tr><td class="gs-major-name">' + escapeHtml(row.name) + '</td>';
     row.cells.forEach(c => {
       html += '<td class="gs-cell ' + c.cls + '">' + escapeHtml(c.label) + '</td>';
     });
@@ -1100,6 +1100,13 @@ function renderPlayerProfile(playerId){
   const wins = tourMatches.filter(m => m.winnerId === playerId).length;
   const losses = tourMatches.length - wins;
   const latest = getLatestActiveDate();
+  const currentYear = new Date(latest).getFullYear();
+  const yearMatches = tourMatches.filter(m => {
+    const t = tournamentById(m.tournamentId);
+    return t && t.year === currentYear;
+  });
+  const yearWins = yearMatches.filter(m => m.winnerId === playerId).length;
+  const yearLosses = yearMatches.length - yearWins;
   const totals = computeRankingsAsOf(latest);
   const stats = totals.get(playerId) || {points:0, titles:0};
   const careerStats = computeRankings(null).get(playerId) || {points:0, titles:0};
@@ -1222,6 +1229,20 @@ function renderPlayerProfile(playerId){
       modal.appendChild(row);
     });
   }
+
+  modal.appendChild(el("div", {class:"profile-section-title"}, ["Season & Career Record"]));
+  const yearPct = (yearWins + yearLosses) > 0 ? Math.round((yearWins / (yearWins + yearLosses)) * 100) : 0;
+  const careerPct = (wins + losses) > 0 ? Math.round((wins / (wins + losses)) * 100) : 0;
+  modal.appendChild(el("div", {class:"season-career-box"}, [
+    el("div", {class:"scr-row"}, [
+      el("span", {class:"scr-label"}, [String(currentYear) + " Season"]),
+      el("span", {class:"scr-value"}, [yearWins + "\u2013" + yearLosses + (yearWins + yearLosses > 0 ? " (" + yearPct + "%)" : "")])
+    ]),
+    el("div", {class:"scr-row"}, [
+      el("span", {class:"scr-label"}, ["Career"]),
+      el("span", {class:"scr-value"}, [wins + "\u2013" + losses + (wins + losses > 0 ? " (" + careerPct + "%)" : "")])
+    ])
+  ]));
 
   modal.appendChild(el("div", {class:"profile-section-title"}, ["Final Results"]));
   const finalResults = getFinalResultsForPlayer(playerId);
@@ -3314,6 +3335,26 @@ function renderRecords(){
 /* ---------------- Grand Slam History ---------------- */
 // Cumulative QF/SF/F/W appearances, either across every Grand Slam
 // (majorName === null) or scoped to one specific major by name.
+// Real slams have a fixed order in the calendar (Jan, May-Jun, Jun-Jul,
+// Aug-Sep) — sorting by each major's average scheduled month, rather than
+// alphabetically, gets Australian/French/Wimbledon/US Open in the right
+// order automatically no matter what the user actually names them.
+function averageMajorMonth(name){
+  const editions = state.tournaments.filter(t => t.level === "GRAND_SLAM" && t.name === name && t.startDate);
+  if(editions.length === 0) return null;
+  const months = editions.map(t => new Date(t.startDate + "T00:00:00").getMonth());
+  return months.reduce((a, b) => a + b, 0) / months.length;
+}
+function sortMajorNamesByCalendarOrder(names){
+  return names.slice().sort((a, b) => {
+    const ma = averageMajorMonth(a), mb = averageMajorMonth(b);
+    if(ma === null && mb === null) return a.localeCompare(b);
+    if(ma === null) return 1;
+    if(mb === null) return -1;
+    return ma - mb || a.localeCompare(b);
+  });
+}
+
 function computeGrandSlamCareerStats(majorName){
   const stats = new Map();
   state.players.forEach(p => stats.set(p.id, {QF:0, SF:0, F:0, W:0}));
@@ -3347,10 +3388,14 @@ function computeGrandSlamCareerStats(majorName){
 let slamFilter = "TOTAL";
 
 function populateSlamFilterToggle(){
-  const majorNames = Array.from(new Set(state.tournaments.filter(t => t.level === "GRAND_SLAM").map(t => t.name))).sort();
+  const namesFromTournaments = state.tournaments.filter(t => t.level === "GRAND_SLAM").map(t => t.name);
+  const namesFromHistory = [];
+  state.players.forEach(p => getHistoricalSlamsArray(p).forEach(e => { if(e.majorName) namesFromHistory.push(e.majorName); }));
+  const majorNames = sortMajorNamesByCalendarOrder(Array.from(new Set([...namesFromTournaments, ...namesFromHistory])));
+
   const toggle = $("#slam-filter-toggle");
   toggle.innerHTML = '<button class="mode-btn" data-slam-filter="TOTAL">Total</button>' +
-    majorNames.map(n => '<button class="mode-btn" data-slam-filter="' + escapeHtml(n) + '">' + escapeHtml(abbreviateTournamentName(n)) + '</button>').join("");
+    majorNames.map(n => '<button class="mode-btn" data-slam-filter="' + escapeHtml(n) + '">' + escapeHtml(n) + '</button>').join("");
   $all("[data-slam-filter]").forEach(btn => btn.classList.toggle("active", btn.dataset.slamFilter === slamFilter));
 }
 
@@ -3362,11 +3407,11 @@ function renderGrandSlamHistory(){
   const rows = state.players
     .map(p => {
       const c = computed.get(p.id) || {QF:0, SF:0, F:0, W:0};
-      const h = (isTotal && p.historicalSlams) ? p.historicalSlams : {QF:0, SF:0, F:0, W:0};
+      const h = historicalSlamsForMajor(p, isTotal ? null : slamFilter);
       return {
         p,
         s: {QF: c.QF + h.QF, SF: c.SF + h.SF, F: c.F + h.F, W: c.W + h.W},
-        hasHistorical: isTotal && !!(h.QF || h.SF || h.F || h.W)
+        hasHistorical: !!(h.QF || h.SF || h.F || h.W)
       };
     })
     .filter(r => r.s.QF > 0)
@@ -3394,12 +3439,39 @@ function renderGrandSlamHistory(){
     '<td>' + r.s.SF + mark(r) + '</td>' +
     '<td>' + r.s.F + mark(r) + '</td>' +
     '<td class="points-cell">' + r.s.W + mark(r) + '</td>' +
-    (isTotal ? '<td><button class="btn btn-small btn-ghost" data-edit-slam-history="' + r.p.id + '">Edit</button></td>' : '<td></td>') +
+    '<td><button class="btn btn-small btn-ghost" data-edit-slam-history="' + r.p.id + '">Edit</button></td>' +
     '</tr>'
   )).join("");
 }
 
 /* ---------------- Historical Grand Slam record (manual, purely additive) ---------------- */
+// Reads a player's historical entries safely regardless of which shape is
+// stored — a fresh save is always the new per-major array, but any player
+// saved before this feature had per-major rows will still have the old
+// flat {QF,SF,F,W} shape sitting in storage, so this treats that old shape
+// as a single legacy row rather than losing it.
+function getHistoricalSlamsArray(p){
+  if(Array.isArray(p.historicalSlams)) return p.historicalSlams;
+  if(p.historicalSlams && typeof p.historicalSlams === "object"){
+    const h = p.historicalSlams;
+    if(h.QF || h.SF || h.F || h.W){
+      return [{id:"legacy", majorName:"Historical (Unspecified)", qf:h.QF||0, sf:h.SF||0, f:h.F||0, titles:h.W||0}];
+    }
+  }
+  return [];
+}
+// majorName === null sums every entry (Total); otherwise scoped to one major.
+function historicalSlamsForMajor(p, majorName){
+  const entries = getHistoricalSlamsArray(p);
+  const relevant = majorName == null ? entries : entries.filter(e => e.majorName === majorName);
+  return relevant.reduce((acc, e) => ({
+    QF: acc.QF + (Number(e.qf) || 0),
+    SF: acc.SF + (Number(e.sf) || 0),
+    F: acc.F + (Number(e.f) || 0),
+    W: acc.W + (Number(e.titles) || 0)
+  }), {QF:0, SF:0, F:0, W:0});
+}
+
 let eshSelectedPlayerId = null;
 
 function buildEshPicker(){
@@ -3425,6 +3497,31 @@ function handleEshSearchInput(e){
   suggestionsEl.classList.remove("hidden");
 }
 
+function knownMajorNamesForDatalist(){
+  const names = new Set(state.tournaments.filter(t => t.level === "GRAND_SLAM").map(t => t.name));
+  state.players.forEach(p => getHistoricalSlamsArray(p).forEach(e => { if(e.majorName) names.add(e.majorName); }));
+  return sortMajorNamesByCalendarOrder(Array.from(names));
+}
+
+function addEshRow(entry){
+  const rows = $("#esh-rows");
+  const row = el("div", {class:"esh-row"});
+  const majorInput = el("input", {type:"text", placeholder:"Major name, e.g. Wimbledon", list:"esh-major-list"});
+  majorInput.value = entry ? entry.majorName : "";
+  const qfInput = el("input", {type:"number", min:"0", placeholder:"QF"});
+  qfInput.value = entry ? entry.qf : "";
+  const sfInput = el("input", {type:"number", min:"0", placeholder:"SF"});
+  sfInput.value = entry ? entry.sf : "";
+  const fInput = el("input", {type:"number", min:"0", placeholder:"F"});
+  fInput.value = entry ? entry.f : "";
+  const wInput = el("input", {type:"number", min:"0", placeholder:"Titles"});
+  wInput.value = entry ? entry.titles : "";
+  const removeBtn = el("button", {type:"button", class:"entry-list-remove"}, ["\u00d7"]);
+  removeBtn.addEventListener("click", () => row.remove());
+  row.appendChild(majorInput); row.appendChild(qfInput); row.appendChild(sfInput); row.appendChild(fInput); row.appendChild(wInput); row.appendChild(removeBtn);
+  rows.appendChild(row);
+}
+
 function handleEshClick(e){
   const pickBtn = e.target.closest("[data-esh-pick]");
   if(!pickBtn) return;
@@ -3435,11 +3532,17 @@ function handleEshClick(e){
 function openEditSlamHistory(playerId){
   const p = playerId ? playerById(playerId) : null;
   eshSelectedPlayerId = p ? p.id : null;
-  const h = (p && p.historicalSlams) ? p.historicalSlams : {QF:0, SF:0, F:0, W:0};
-  $("#esh-qf").value = h.QF || 0;
-  $("#esh-sf").value = h.SF || 0;
-  $("#esh-f").value = h.F || 0;
-  $("#esh-w").value = h.W || 0;
+
+  if(!$("#esh-major-list")){
+    document.body.appendChild(el("datalist", {id:"esh-major-list"}));
+  }
+  $("#esh-major-list").innerHTML = knownMajorNamesForDatalist().map(n => '<option value="' + escapeHtml(n) + '">').join("");
+
+  $("#esh-rows").innerHTML = "";
+  const entries = p ? getHistoricalSlamsArray(p) : [];
+  if(entries.length === 0) addEshRow(null);
+  else entries.forEach(addEshRow);
+
   buildEshPicker();
   $("#edit-slam-history-backdrop").classList.remove("hidden");
 }
@@ -3451,15 +3554,28 @@ function handleEditSlamHistoryForm(ev){
   ev.preventDefault();
   const p = eshSelectedPlayerId ? playerById(eshSelectedPlayerId) : null;
   if(!p){ alert("Search and pick a player first."); return; }
-  const qf = Math.max(0, Math.round(Number($("#esh-qf").value) || 0));
-  const sf = Math.max(0, Math.round(Number($("#esh-sf").value) || 0));
-  const f = Math.max(0, Math.round(Number($("#esh-f").value) || 0));
-  const w = Math.max(0, Math.round(Number($("#esh-w").value) || 0));
-  if(w > f || f > sf || sf > qf){
-    alert("Each stage should be at least as many as the next — Titles ≤ Finals ≤ Semifinals ≤ Quarterfinals.");
-    return;
-  }
-  p.historicalSlams = {QF: qf, SF: sf, F: f, W: w};
+
+  const entries = [];
+  let hadError = false;
+  $all("#esh-rows .esh-row").forEach((row, i) => {
+    const inputs = row.querySelectorAll("input");
+    const majorName = inputs[0].value.trim();
+    const qf = Math.max(0, Math.round(Number(inputs[1].value) || 0));
+    const sf = Math.max(0, Math.round(Number(inputs[2].value) || 0));
+    const f = Math.max(0, Math.round(Number(inputs[3].value) || 0));
+    const w = Math.max(0, Math.round(Number(inputs[4].value) || 0));
+    if(!majorName && qf === 0 && sf === 0 && f === 0 && w === 0) return; // skip fully-empty rows
+    if(!majorName){ alert("Row " + (i + 1) + " needs a major name."); hadError = true; return; }
+    if(w > f || f > sf || sf > qf){
+      alert("Row " + (i + 1) + " (" + majorName + "): each stage should be at least as many as the next — Titles ≤ Finals ≤ Semifinals ≤ Quarterfinals.");
+      hadError = true;
+      return;
+    }
+    entries.push({id: uid("hs"), majorName, qf, sf, f, titles: w});
+  });
+  if(hadError) return;
+
+  p.historicalSlams = entries;
   saveState();
   closeEditSlamHistory();
   renderGrandSlamHistory();
@@ -4011,6 +4127,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#edit-slam-history-backdrop").addEventListener("click", (e) => { if(e.target.id === "edit-slam-history-backdrop") closeEditSlamHistory(); });
   $("#esh-player-picker").addEventListener("input", handleEshSearchInput);
   $("#esh-player-picker").addEventListener("click", handleEshClick);
+  $("#esh-add-row").addEventListener("click", () => addEshRow(null));
   $("#slams-body").addEventListener("click", (e) => {
     const btn = e.target.closest("[data-edit-slam-history]");
     if(btn) openEditSlamHistory(btn.dataset.editSlamHistory);
