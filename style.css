@@ -129,6 +129,7 @@ main.wrap{padding-top: 32px; padding-bottom: 80px;}
   color: var(--ink-soft);
   margin: -14px 0 18px;
 }
+.hist-marker{color: var(--pink); font-weight: 700;}
 .mode-toggle{
   display: flex;
   border: 1px solid var(--ink);
@@ -1028,6 +1029,42 @@ form textarea{
 }
 .cal-bye-name{color: var(--ink-soft); font-style: italic;}
 
+/* ---------------- Player profile: Grand Slam year grid ---------------- */
+.gs-grid-scroll{overflow-x: auto; margin-bottom: 24px;}
+.gs-grid-table{
+  border-collapse: collapse;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.gs-grid-table th, .gs-grid-table td{
+  padding: 6px 8px;
+  text-align: center;
+  border: 1px solid var(--paper);
+}
+.gs-grid-table thead th{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--ink-soft);
+  background: white;
+  border-bottom: 1px solid var(--line);
+}
+.gs-major-name{
+  text-align: left !important;
+  font-weight: 700;
+  background: white;
+  position: sticky;
+  left: 0;
+}
+.gs-cell{font-weight: 600; color: var(--ink);}
+.gs-cell-a{background: white; color: var(--ink-soft); font-weight: 400;}
+.gs-cell-r{background: #cdeef2;}
+.gs-cell-qf{background: #f5dcb4;}
+.gs-cell-sf{background: #fff176;}
+.gs-cell-f{background: #d9c6e8;}
+.gs-cell-w{background: #4caf50; color: white;}
+.gs-totals-row{font-weight: 700; background: var(--paper-2);}
+.gs-totals-row td{border-top: 2px solid var(--ink);}
+
 /* ---------------- WATP Finals (round robin + knockout) ---------------- */
 .rr-standings{margin-bottom: 16px;}
 .rr-standings tr.rr-advancing{background: var(--paper-2); font-weight: 700;}
@@ -1157,6 +1194,12 @@ form textarea{
   color: var(--ink-soft);
   width: 18px;
   flex-shrink: 0;
+}
+.record-rank-cell{
+  font-family:'JetBrains Mono', monospace;
+  color: var(--ink-soft);
+  width: 28px;
+  text-align: center;
 }
 .record-name{flex:1; min-width:0;}
 .record-count{

@@ -984,6 +984,108 @@ function getFinalResultsForPlayer(playerId){
   return results;
 }
 
+function gsCellClass(code){
+  if(code === "W") return "gs-cell-w";
+  if(code === "F") return "gs-cell-f";
+  if(code === "SF") return "gs-cell-sf";
+  if(code === "QF") return "gs-cell-qf";
+  if(code && code !== "A") return "gs-cell-r"; // R128, R64, R32, R16
+  return "gs-cell-a";
+}
+
+// Year-by-year Grand Slam grid for a player's profile, styled after the
+// classic tour-site format: one row per major, one column per year, colored
+// by round reached, with per-major and per-year win-loss summaries.
+function computePlayerGrandSlamGrid(playerId){
+  const slamTournaments = state.tournaments.filter(t => t.level === "GRAND_SLAM");
+  if(slamTournaments.length === 0) return null;
+  const majorNames = Array.from(new Set(slamTournaments.map(t => t.name))).sort();
+  const years = Array.from(new Set(slamTournaments.map(t => t.year))).sort((a,b) => a - b);
+
+  function tourRecordAt(t){
+    let w = 0, l = 0;
+    matchesForTournament(t.id).forEach(m => {
+      if((m.bracket || "main") === "qual") return;
+      if(m.playerAId !== playerId && m.playerBId !== playerId) return;
+      if(m.winnerId === playerId) w++; else l++;
+    });
+    return {w, l};
+  }
+
+  const grid = majorNames.map(name => {
+    const editions = years.map(year => slamTournaments.find(tt => tt.name === name && tt.year === year));
+    const cells = editions.map(t => {
+      if(!t) return {code: null, label: "—", cls: ""};
+      const mainRes = computeTournamentResults(t.id).get(playerId);
+      if(mainRes) return {code: mainRes.code, label: mainRes.code, cls: gsCellClass(mainRes.code)};
+      const qRes = (t.qualifying && t.qualifying.enabled) ? computeQualifyingResults(t).get(playerId) : null;
+      if(qRes){
+        const qLabel = qRes.code === "QUALIFIED" ? "Q" : qRes.code;
+        return {code: "A", label: qLabel, cls: "gs-cell-a"};
+      }
+      return {code: "A", label: "A", cls: "gs-cell-a"};
+    });
+
+    let titles = 0, appearances = 0, w = 0, l = 0;
+    editions.forEach((t, i) => {
+      if(cells[i].code === "W") titles++;
+      if(cells[i].code && cells[i].code !== "A") appearances++;
+      if(t){ const r = tourRecordAt(t); w += r.w; l += r.l; }
+    });
+    const winPct = (w + l) > 0 ? Math.round((w / (w + l)) * 100) : 0;
+    return {name, editions, cells, titles, appearances, wins: w, losses: l, winPct};
+  });
+
+  const yearTotals = years.map((year, yi) => {
+    let w = 0, l = 0;
+    grid.forEach(row => {
+      const t = row.editions[yi];
+      if(!t) return;
+      const r = tourRecordAt(t);
+      w += r.w; l += r.l;
+    });
+    return {w, l};
+  });
+
+  const totalTitles = grid.reduce((s, r) => s + r.titles, 0);
+  const totalAppearances = grid.reduce((s, r) => s + r.appearances, 0);
+  const totalWins = grid.reduce((s, r) => s + r.wins, 0);
+  const totalLosses = grid.reduce((s, r) => s + r.losses, 0);
+  const totalWinPct = (totalWins + totalLosses) > 0 ? Math.round((totalWins / (totalWins + totalLosses)) * 100) : 0;
+
+  return {majorNames, years, grid, yearTotals, totalTitles, totalAppearances, totalWins, totalLosses, totalWinPct};
+}
+
+function grandSlamGridHTML(playerId){
+  const data = computePlayerGrandSlamGrid(playerId);
+  if(!data) return null;
+
+  let html = '<div class="gs-grid-scroll"><table class="gs-grid-table"><thead><tr><th>Tournament</th>';
+  data.years.forEach(y => { html += '<th>' + y + '</th>'; });
+  html += '<th>SR</th><th>W&ndash;L</th><th>Win %</th></tr></thead><tbody>';
+
+  data.grid.forEach(row => {
+    html += '<tr><td class="gs-major-name">' + escapeHtml(abbreviateTournamentName(row.name)) + '</td>';
+    row.cells.forEach(c => {
+      html += '<td class="gs-cell ' + c.cls + '">' + escapeHtml(c.label) + '</td>';
+    });
+    html += '<td>' + row.titles + ' / ' + row.appearances + '</td>';
+    html += '<td>' + row.wins + '&ndash;' + row.losses + '</td>';
+    html += '<td>' + row.winPct + '%</td>';
+    html += '</tr>';
+  });
+
+  html += '<tr class="gs-totals-row"><td>Win&ndash;loss</td>';
+  data.yearTotals.forEach(yt => { html += '<td>' + yt.w + '&ndash;' + yt.l + '</td>'; });
+  html += '<td>' + data.totalTitles + ' / ' + data.totalAppearances + '</td>';
+  html += '<td>' + data.totalWins + '&ndash;' + data.totalLosses + '</td>';
+  html += '<td>' + data.totalWinPct + '%</td>';
+  html += '</tr>';
+
+  html += '</tbody></table></div>';
+  return html;
+}
+
 function renderPlayerProfile(playerId){
   const p = playerById(playerId);
   if(!p) return;
@@ -1075,6 +1177,12 @@ function renderPlayerProfile(playerId){
     modal.appendChild(el("p", {}, ["Not enough tournaments played yet to chart a trend."]));
   } else {
     modal.appendChild(el("div", {class:"rank-chart", html: renderRankHistorySVG(history)}));
+  }
+
+  const gsGrid = grandSlamGridHTML(playerId);
+  if(gsGrid){
+    modal.appendChild(el("div", {class:"profile-section-title"}, ["Grand Slam History"]));
+    modal.appendChild(el("div", {html: gsGrid}));
   }
 
   modal.appendChild(el("div", {class:"profile-section-title"}, ["Tournament Results"]));
@@ -3204,35 +3312,63 @@ function renderRecords(){
 
 /* ---------------- History view ---------------- */
 /* ---------------- Grand Slam History ---------------- */
-function computeGrandSlamCareerStats(){
+// Cumulative QF/SF/F/W appearances, either across every Grand Slam
+// (majorName === null) or scoped to one specific major by name.
+function computeGrandSlamCareerStats(majorName){
   const stats = new Map();
   state.players.forEach(p => stats.set(p.id, {QF:0, SF:0, F:0, W:0}));
   const idxQF = ROUND_ORDER.indexOf("QF");
   const idxSF = ROUND_ORDER.indexOf("SF");
   const idxF = ROUND_ORDER.indexOf("F");
 
-  state.tournaments.filter(t => t.level === "GRAND_SLAM").forEach(t => {
-    const results = computeTournamentResults(t.id);
-    results.forEach((res, pid) => {
-      const s = stats.get(pid);
-      if(!s) return;
-      if(res.code === "W"){
-        s.QF++; s.SF++; s.F++; s.W++;
-      } else {
-        const idx = ROUND_ORDER.indexOf(res.code);
-        if(idx >= idxQF) s.QF++;
-        if(idx >= idxSF) s.SF++;
-        if(idx >= idxF) s.F++;
-      }
+  state.tournaments
+    .filter(t => t.level === "GRAND_SLAM" && (majorName == null || t.name === majorName))
+    .forEach(t => {
+      const results = computeTournamentResults(t.id);
+      results.forEach((res, pid) => {
+        const s = stats.get(pid);
+        if(!s) return;
+        if(res.code === "W"){
+          s.QF++; s.SF++; s.F++; s.W++;
+        } else {
+          const idx = ROUND_ORDER.indexOf(res.code);
+          if(idx >= idxQF) s.QF++;
+          if(idx >= idxSF) s.SF++;
+          if(idx >= idxF) s.F++;
+        }
+      });
     });
-  });
   return stats;
 }
 
+// "Total" (all majors combined, includes manually-added pre-WATP history)
+// or a specific major's name — historical entries only ever apply to Total,
+// since they aren't broken down by which major they came from.
+let slamFilter = "TOTAL";
+
+function populateSlamFilterToggle(){
+  const majorNames = Array.from(new Set(state.tournaments.filter(t => t.level === "GRAND_SLAM").map(t => t.name))).sort();
+  const toggle = $("#slam-filter-toggle");
+  toggle.innerHTML = '<button class="mode-btn" data-slam-filter="TOTAL">Total</button>' +
+    majorNames.map(n => '<button class="mode-btn" data-slam-filter="' + escapeHtml(n) + '">' + escapeHtml(abbreviateTournamentName(n)) + '</button>').join("");
+  $all("[data-slam-filter]").forEach(btn => btn.classList.toggle("active", btn.dataset.slamFilter === slamFilter));
+}
+
 function renderGrandSlamHistory(){
-  const stats = computeGrandSlamCareerStats();
+  populateSlamFilterToggle();
+  const isTotal = slamFilter === "TOTAL";
+  const computed = computeGrandSlamCareerStats(isTotal ? null : slamFilter);
+
   const rows = state.players
-    .map(p => ({p, s: stats.get(p.id)}))
+    .map(p => {
+      const c = computed.get(p.id) || {QF:0, SF:0, F:0, W:0};
+      const h = (isTotal && p.historicalSlams) ? p.historicalSlams : {QF:0, SF:0, F:0, W:0};
+      return {
+        p,
+        s: {QF: c.QF + h.QF, SF: c.SF + h.SF, F: c.F + h.F, W: c.W + h.W},
+        hasHistorical: isTotal && !!(h.QF || h.SF || h.F || h.W)
+      };
+    })
     .filter(r => r.s.QF > 0)
     .sort((a,b) =>
       b.s.W - a.s.W || b.s.F - a.s.F || b.s.SF - a.s.SF || b.s.QF - a.s.QF || a.p.name.localeCompare(b.p.name));
@@ -3247,81 +3383,86 @@ function renderGrandSlamHistory(){
   table.classList.remove("hidden");
   empty.classList.add("hidden");
 
-  $("#slams-body").innerHTML = rows.map(r => (
+  const mark = (r) => r.hasHistorical ? '<span class="hist-marker">*</span>' : "";
+
+  $("#slams-body").innerHTML = rows.map((r, i) => (
     '<tr>' +
+    '<td class="record-rank-cell">' + (i + 1) + '</td>' +
     '<td><button class="player-link" data-open-player="' + r.p.id + '">' + flagImgHTML(r.p.country) + escapeHtml(r.p.name) + '</button></td>' +
     '<td class="country-chip">' + (r.p.country ? escapeHtml(r.p.country.toUpperCase()) : "—") + '</td>' +
-    '<td>' + r.s.QF + '</td>' +
-    '<td>' + r.s.SF + '</td>' +
-    '<td>' + r.s.F + '</td>' +
-    '<td class="points-cell">' + r.s.W + '</td>' +
+    '<td>' + r.s.QF + mark(r) + '</td>' +
+    '<td>' + r.s.SF + mark(r) + '</td>' +
+    '<td>' + r.s.F + mark(r) + '</td>' +
+    '<td class="points-cell">' + r.s.W + mark(r) + '</td>' +
+    (isTotal ? '<td><button class="btn btn-small btn-ghost" data-edit-slam-history="' + r.p.id + '">Edit</button></td>' : '<td></td>') +
     '</tr>'
   )).join("");
 }
 
-// Same cumulative-appearance idea as computeGrandSlamCareerStats, but scoped
-// to a single metric and broken out per named major (all editions of a
-// tournament with the same name are treated as "the same Slam" across years).
-let slamMetric = "QF";
-function computeGrandSlamBreakdownByName(metric){
-  const slamNames = Array.from(new Set(state.tournaments.filter(t => t.level === "GRAND_SLAM").map(t => t.name))).sort();
-  const idxQF = ROUND_ORDER.indexOf("QF"), idxSF = ROUND_ORDER.indexOf("SF"), idxF = ROUND_ORDER.indexOf("F");
-  const target = metric === "QF" ? idxQF : metric === "SF" ? idxSF : metric === "F" ? idxF : null;
+/* ---------------- Historical Grand Slam record (manual, purely additive) ---------------- */
+let eshSelectedPlayerId = null;
 
-  const counts = new Map();
-  state.players.forEach(p => {
-    const row = {};
-    slamNames.forEach(n => { row[n] = 0; });
-    counts.set(p.id, row);
-  });
-
-  state.tournaments.filter(t => t.level === "GRAND_SLAM").forEach(t => {
-    const results = computeTournamentResults(t.id);
-    results.forEach((res, pid) => {
-      const row = counts.get(pid);
-      if(!row) return;
-      let reached;
-      if(metric === "W") reached = res.code === "W";
-      else reached = res.code === "W" || ROUND_ORDER.indexOf(res.code) >= target;
-      if(reached) row[t.name] = (row[t.name] || 0) + 1;
-    });
-  });
-
-  return {slamNames, counts};
+function buildEshPicker(){
+  const wrap = $("#esh-player-picker");
+  wrap.innerHTML = "";
+  const p = eshSelectedPlayerId ? playerById(eshSelectedPlayerId) : null;
+  const input = el("input", {type:"text", class:"picker-input", autocomplete:"off", placeholder:"Search player…", id:"esh-player-search"});
+  input.value = p ? p.name : "";
+  input.disabled = false;
+  wrap.appendChild(input);
+  wrap.appendChild(el("div", {class:"picker-suggestions hidden", id:"esh-player-suggestions"}));
 }
 
-function renderGrandSlamBreakdown(){
-  $all("[data-slam-metric]").forEach(btn => btn.classList.toggle("active", btn.dataset.slamMetric === slamMetric));
+function handleEshSearchInput(e){
+  if(e.target.id !== "esh-player-search") return;
+  const query = e.target.value;
+  const suggestionsEl = $("#esh-player-suggestions");
+  if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
+  const results = state.players.filter(p => matchesSearch(p.name, query)).slice(0, 8);
+  suggestionsEl.innerHTML = results.length
+    ? results.map(p => '<button type="button" class="picker-option" data-esh-pick="' + p.id + '">' + playerNameHTML(p) + '</button>').join("")
+    : '<div class="picker-empty">No match</div>';
+  suggestionsEl.classList.remove("hidden");
+}
 
-  const {slamNames, counts} = computeGrandSlamBreakdownByName(slamMetric);
-  const table = $("#slam-breakdown-table");
-  const empty = $("#slam-breakdown-empty");
-  if(slamNames.length === 0){
-    table.classList.add("hidden");
-    empty.classList.remove("hidden");
+function handleEshClick(e){
+  const pickBtn = e.target.closest("[data-esh-pick]");
+  if(!pickBtn) return;
+  eshSelectedPlayerId = pickBtn.dataset.eshPick;
+  buildEshPicker();
+}
+
+function openEditSlamHistory(playerId){
+  const p = playerId ? playerById(playerId) : null;
+  eshSelectedPlayerId = p ? p.id : null;
+  const h = (p && p.historicalSlams) ? p.historicalSlams : {QF:0, SF:0, F:0, W:0};
+  $("#esh-qf").value = h.QF || 0;
+  $("#esh-sf").value = h.SF || 0;
+  $("#esh-f").value = h.F || 0;
+  $("#esh-w").value = h.W || 0;
+  buildEshPicker();
+  $("#edit-slam-history-backdrop").classList.remove("hidden");
+}
+function closeEditSlamHistory(){
+  $("#edit-slam-history-backdrop").classList.add("hidden");
+  eshSelectedPlayerId = null;
+}
+function handleEditSlamHistoryForm(ev){
+  ev.preventDefault();
+  const p = eshSelectedPlayerId ? playerById(eshSelectedPlayerId) : null;
+  if(!p){ alert("Search and pick a player first."); return; }
+  const qf = Math.max(0, Math.round(Number($("#esh-qf").value) || 0));
+  const sf = Math.max(0, Math.round(Number($("#esh-sf").value) || 0));
+  const f = Math.max(0, Math.round(Number($("#esh-f").value) || 0));
+  const w = Math.max(0, Math.round(Number($("#esh-w").value) || 0));
+  if(w > f || f > sf || sf > qf){
+    alert("Each stage should be at least as many as the next — Titles ≤ Finals ≤ Semifinals ≤ Quarterfinals.");
     return;
   }
-  table.classList.remove("hidden");
-  empty.classList.add("hidden");
-
-  $("#slam-breakdown-head").innerHTML = "<th>Player</th>" +
-    slamNames.map(n => '<th title="' + escapeHtml(n) + '">' + escapeHtml(abbreviateTournamentName(n)) + "</th>").join("") +
-    "<th>Total</th>";
-
-  const rows = state.players
-    .map(p => {
-      const row = counts.get(p.id) || {};
-      const total = slamNames.reduce((s, n) => s + (row[n] || 0), 0);
-      return {p, row, total};
-    })
-    .filter(r => r.total > 0)
-    .sort((a,b) => b.total - a.total || a.p.name.localeCompare(b.p.name));
-
-  $("#slam-breakdown-body").innerHTML = rows.map(r => (
-    '<tr><td><button class="player-link" data-open-player="' + r.p.id + '">' + flagImgHTML(r.p.country) + escapeHtml(r.p.name) + '</button></td>' +
-    slamNames.map(n => '<td>' + (r.row[n] || 0) + '</td>').join("") +
-    '<td class="points-cell">' + r.total + '</td></tr>'
-  )).join("");
+  p.historicalSlams = {QF: qf, SF: sf, F: f, W: w};
+  saveState();
+  closeEditSlamHistory();
+  renderGrandSlamHistory();
 }
 
 /* ---------------- Head to Head ---------------- */
@@ -3704,7 +3845,7 @@ function switchView(view){
   if(view === "players") renderPlayers();
   if(view === "tournaments") renderTournaments();
   if(view === "records") renderRecords();
-  if(view === "slams"){ renderGrandSlamHistory(); renderGrandSlamBreakdown(); }
+  if(view === "slams") renderGrandSlamHistory();
   if(view === "h2h") renderHeadToHead();
 }
 
@@ -3857,11 +3998,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
   $("#view-h2h").addEventListener("input", handleH2HSearchInput);
   $("#view-h2h").addEventListener("click", handleH2HClick);
-  $("#slam-metric-toggle").addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-slam-metric]");
+  $("#slam-filter-toggle").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-slam-filter]");
     if(!btn) return;
-    slamMetric = btn.dataset.slamMetric;
-    renderGrandSlamBreakdown();
+    slamFilter = btn.dataset.slamFilter;
+    renderGrandSlamHistory();
+  });
+
+  $("#open-add-slam-history").addEventListener("click", () => openEditSlamHistory(null));
+  $("#esh-cancel").addEventListener("click", closeEditSlamHistory);
+  $("#edit-slam-history-form").addEventListener("submit", handleEditSlamHistoryForm);
+  $("#edit-slam-history-backdrop").addEventListener("click", (e) => { if(e.target.id === "edit-slam-history-backdrop") closeEditSlamHistory(); });
+  $("#esh-player-picker").addEventListener("input", handleEshSearchInput);
+  $("#esh-player-picker").addEventListener("click", handleEshClick);
+  $("#slams-body").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-edit-slam-history]");
+    if(btn) openEditSlamHistory(btn.dataset.editSlamHistory);
   });
 
   $("#player-modal-backdrop").addEventListener("click", (e) => { if(e.target.id === "player-modal-backdrop") closePlayerModal(); });

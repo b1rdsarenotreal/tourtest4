@@ -134,37 +134,22 @@
   <section class="view hidden" id="view-slams">
     <div class="view-head">
       <h2>Grand Slam History</h2>
+      <button class="btn btn-ghost" id="open-add-slam-history">+ Add Historical Record</button>
     </div>
-    <p class="rankings-rule-note">Career Grand Slam appearances — reaching a later round always counts toward the earlier ones too (a finalist has also reached the quarterfinal and semifinal that trip).</p>
+    <p class="rankings-rule-note">Career Grand Slam appearances — reaching a later round always counts toward the earlier ones too (a finalist has also reached the quarterfinal and semifinal that trip). Numbers with a <span class="hist-marker">*</span> include manually-added history from before this tracker existed (Total only — historical entries aren't broken down by major).</p>
+
+    <div class="mode-toggle" id="slam-filter-toggle"></div>
+
     <div id="slams-empty" class="empty hidden">
       <p>No Grand Slam results yet.</p>
       <p class="empty-sub">This fills in once results start coming in for a Grand Slam-level tournament.</p>
     </div>
     <table class="data-table" id="slams-table">
       <thead>
-        <tr><th>Player</th><th>Country</th><th>QF</th><th>SF</th><th>F</th><th>Titles</th></tr>
+        <tr><th>#</th><th>Player</th><th>Country</th><th>QF</th><th>SF</th><th>F</th><th>Titles</th><th></th></tr>
       </thead>
       <tbody id="slams-body"></tbody>
     </table>
-
-    <div class="bracket-section-title">
-      <h3>By Major</h3>
-    </div>
-    <div class="mode-toggle" id="slam-metric-toggle">
-      <button class="mode-btn active" data-slam-metric="QF">QF</button>
-      <button class="mode-btn" data-slam-metric="SF">SF</button>
-      <button class="mode-btn" data-slam-metric="F">F</button>
-      <button class="mode-btn" data-slam-metric="W">Titles</button>
-    </div>
-    <div id="slam-breakdown-empty" class="empty hidden">
-      <p>No Grand Slam results yet.</p>
-    </div>
-    <div class="calendar-scroll">
-      <table class="data-table" id="slam-breakdown-table">
-        <thead><tr id="slam-breakdown-head"></tr></thead>
-        <tbody id="slam-breakdown-body"></tbody>
-      </table>
-    </div>
   </section>
 
   <!-- HEAD TO HEAD -->
@@ -449,6 +434,39 @@
       <div class="form-actions">
         <button type="button" class="btn btn-ghost" id="et-cancel">Cancel</button>
         <button type="submit" class="btn btn-primary">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Edit historical slam record modal -->
+<div class="modal-backdrop hidden" id="edit-slam-history-backdrop">
+  <div class="modal">
+    <form id="edit-slam-history-form">
+      <h3>Historical Slam Record</h3>
+      <p class="modal-help">For appearances from before this tracker existed, or from outside this system entirely. These are purely additive — added on top of whatever's actually recorded here, and they never affect rankings or points, only what shows on this page.</p>
+      <label>Player
+        <div class="picker-wrap" id="esh-player-picker"></div>
+      </label>
+      <div class="field-row">
+        <label>Quarterfinals
+          <input type="number" id="esh-qf" min="0" value="0">
+        </label>
+        <label>Semifinals
+          <input type="number" id="esh-sf" min="0" value="0">
+        </label>
+      </div>
+      <div class="field-row">
+        <label>Finals
+          <input type="number" id="esh-f" min="0" value="0">
+        </label>
+        <label>Titles
+          <input type="number" id="esh-w" min="0" value="0">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" id="esh-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
       </div>
     </form>
   </div>
