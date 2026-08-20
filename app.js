@@ -1967,8 +1967,9 @@ function renderFinalsGroupSetup(t){
     const asOf = rankingDateFromSelectValue(dateSelect.value);
     const ranks = ranksFromTotals(officialRankingsAsOf(asOf));
     const used = new Set((t.seeds || []).filter(Boolean));
+    const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
     const candidates = state.players
-      .filter(p => !p.retired && !used.has(p.id))
+      .filter(p => !p.retired && !used.has(p.id) && !committedElsewhere.has(p.id))
       .sort((a,b) => (ranks[a.id] || 999999) - (ranks[b.id] || 999999) || a.name.localeCompare(b.name));
     let ci = 0, filled = 0;
     for(let i = 0; i < 8; i++){
@@ -2059,8 +2060,9 @@ function handleFinalsGroupSearchInput(e){
     const query = e.target.value;
     const suggestionsEl = document.querySelector('[data-finals-seed-suggestions="' + seedRank + '"]');
     if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
+    const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
     const usedElsewhere = new Set((t.seeds || []).filter((id, idx) => id && String(idx) !== seedRank));
-    const results = state.players.filter(p => !p.retired && !usedElsewhere.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
+    const results = state.players.filter(p => !p.retired && !usedElsewhere.has(p.id) && !committedElsewhere.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
     suggestionsEl.innerHTML = results.length
       ? results.map(p => '<button type="button" class="picker-option" data-finals-seed-pick="' + seedRank + '|' + p.id + '">' + playerNameHTML(p) + '</button>').join("")
       : '<div class="picker-empty">No match</div>';
@@ -2073,8 +2075,9 @@ function handleFinalsGroupSearchInput(e){
   const query = e.target.value;
   const suggestionsEl = document.querySelector('[data-finals-group-suggestions="' + groupId + '"]');
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
+  const committedElsewhereGroup = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
   const usedIds = new Set(t.groups.flatMap(g => g.playerIds));
-  const results = state.players.filter(p => !p.retired && !usedIds.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
+  const results = state.players.filter(p => !p.retired && !usedIds.has(p.id) && !committedElsewhereGroup.has(p.id)).filter(p => matchesSearch(p.name, query)).slice(0, 8);
   suggestionsEl.innerHTML = results.length
     ? results.map(p => '<button type="button" class="picker-option" data-finals-group-pick="' + groupId + '|' + p.id + '">' + playerNameHTML(p) + '</button>').join("")
     : '<div class="picker-empty">No match</div>';
@@ -2477,8 +2480,9 @@ function handleSeedSearchInput(e){
   const suggestionsEl = $('.picker-suggestions[data-seed-suggestions="' + rank + '"]');
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
   const usedElsewhere = new Set((t.seeds || []).filter((id, idx) => id && idx !== rank));
+  const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
   const results = state.players
-    .filter(p => !p.retired && !usedElsewhere.has(p.id))
+    .filter(p => !p.retired && !usedElsewhere.has(p.id) && !committedElsewhere.has(p.id))
     .filter(p => matchesSearch(p.name, query))
     .slice(0, 8);
   suggestionsEl.innerHTML = results.length
@@ -2555,8 +2559,9 @@ function handleEntrantSearchInput(e){
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
   const seededIds = new Set((t.seeds || []).filter(Boolean));
   const existingIds = new Set(t.unseededEntrants || []);
+  const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
   const results = state.players
-    .filter(p => !p.retired && !seededIds.has(p.id) && !existingIds.has(p.id))
+    .filter(p => !p.retired && !seededIds.has(p.id) && !existingIds.has(p.id) && !committedElsewhere.has(p.id))
     .filter(p => matchesSearch(p.name, query))
     .slice(0, 8);
   suggestionsEl.innerHTML = results.length
@@ -2656,8 +2661,9 @@ function handleQualEntrantSearchInput(e){
   const suggestionsEl = $('[data-qual-entrant-suggestions]');
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
   const existingIds = new Set(t.qualifying.entrants || []);
+  const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
   const results = state.players
-    .filter(p => !p.retired && !existingIds.has(p.id))
+    .filter(p => !p.retired && !existingIds.has(p.id) && !committedElsewhere.has(p.id))
     .filter(p => matchesSearch(p.name, query))
     .slice(0, 8);
   suggestionsEl.innerHTML = results.length
@@ -2967,8 +2973,9 @@ function handleAutofillMain(){
 
   const entryRanks = ranksFromTotals(officialRankingsAsOf(entryDate));
   const alreadyUsed = new Set([...(t.seeds || []).filter(Boolean), ...(t.unseededEntrants || [])]);
+  const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
   const fieldCandidates = state.players
-    .filter(p => !p.retired && !alreadyUsed.has(p.id))
+    .filter(p => !p.retired && !alreadyUsed.has(p.id) && !committedElsewhere.has(p.id))
     .sort((a,b) => (entryRanks[a.id] || 99999) - (entryRanks[b.id] || 99999) || a.name.localeCompare(b.name));
 
   const openSeedSlots = [];
@@ -3007,8 +3014,9 @@ function handleAutofillQual(){
   const entryRanks = ranksFromTotals(officialRankingsAsOf(entryDate));
   const usedInMain = new Set([...(t.seeds || []).filter(Boolean), ...(t.unseededEntrants || [])]);
   const usedInQual = new Set(t.qualifying.entrants || []);
+  const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
   const candidates = state.players
-    .filter(p => !p.retired && !usedInMain.has(p.id) && !usedInQual.has(p.id))
+    .filter(p => !p.retired && !usedInMain.has(p.id) && !usedInQual.has(p.id) && !committedElsewhere.has(p.id))
     .sort((a,b) => (entryRanks[a.id] || 99999) - (entryRanks[b.id] || 99999) || a.name.localeCompare(b.name));
 
   const openSlots = Math.max(0, qualSlots - usedInQual.size);
@@ -3070,8 +3078,9 @@ function handleEntryListSearchInput(e){
   const suggestionsEl = $('[data-entrylist-suggestions]');
   if(!query.trim()){ suggestionsEl.classList.add("hidden"); suggestionsEl.innerHTML = ""; return; }
   const existingIds = new Set((t.entryList || []).map(e2 => e2.playerId));
+  const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
   const results = state.players
-    .filter(p => !p.retired && !existingIds.has(p.id))
+    .filter(p => !p.retired && !existingIds.has(p.id) && !committedElsewhere.has(p.id))
     .filter(p => matchesSearch(p.name, query))
     .slice(0, 8);
   suggestionsEl.innerHTML = results.length
