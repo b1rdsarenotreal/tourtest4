@@ -644,8 +644,9 @@ function getRankingWeeks(){
 }
 
 
-function ranksFromTotals(totals){
+function ranksFromTotals(totals, excludeRetiredAsOf){
   const rows = state.players
+    .filter(p => excludeRetiredAsOf === undefined || !isPlayerRetiredAsOf(p, excludeRetiredAsOf))
     .map(p => ({id: p.id, points: (totals.get(p.id) || {points:0}).points}))
     .filter(r => r.points > 0)
     .sort((a,b) => b.points - a.points);
@@ -889,8 +890,14 @@ function renderRankings(){
     // just evaluates everything one week earlier than the selected week.
     effectiveAsOf = rankingsMode === "official" ? nominalAsOf - 7 * MS_PER_DAY : nominalAsOf;
     totals = computeRankingsAsOf(effectiveAsOf);
-    const prevTotals = computeRankingsAsOf(effectiveAsOf - 7 * MS_PER_DAY);
-    movement = {cur: ranksFromTotals(totals), prev: ranksFromTotals(prevTotals)};
+    const prevAsOf = effectiveAsOf - 7 * MS_PER_DAY;
+    const prevTotals = computeRankingsAsOf(prevAsOf);
+    // Both weeks' rank numbering must exclude the same retired players the
+    // current week's table excludes — otherwise a retired player sitting
+    // above someone in last week's (unfiltered) numbers but absent from
+    // this week's (filtered) numbers creates a phantom rank shift for
+    // everyone below them, even though nothing about their results changed.
+    movement = {cur: ranksFromTotals(totals, effectiveAsOf), prev: ranksFromTotals(prevTotals, prevAsOf)};
   } else if(val === "all"){
     totals = computeRankings(null);
   } else if(val.startsWith("year:")){
@@ -1227,9 +1234,18 @@ function computePlayerPeakRank(playerId){
   return peak;
 }
 
+let profileYearFilterPlayerId = null;
+let profileYearFilter = "recent";
 function renderPlayerProfile(playerId){
   const p = playerById(playerId);
   if(!p) return;
+  // Opening a *different* player's profile resets the year filter back to
+  // the default — re-rendering the SAME player (retire toggle, changing the
+  // year dropdown itself) keeps whatever's currently selected.
+  if(profileYearFilterPlayerId !== playerId){
+    profileYearFilter = "recent";
+    profileYearFilterPlayerId = playerId;
+  }
   const matches = matchesForPlayer(playerId).sort((a,b) => {
     const ta = tournamentById(a.tournamentId), tb = tournamentById(b.tournamentId);
     return (tb ? tournamentDateMs(tb) : 0) - (ta ? tournamentDateMs(ta) : 0) || ROUND_ORDER.indexOf(b.round) - ROUND_ORDER.indexOf(a.round);
@@ -1337,11 +1353,28 @@ function renderPlayerProfile(playerId){
     modal.appendChild(el("div", {html: gsGrid}));
   }
 
-  modal.appendChild(el("div", {class:"profile-section-title"}, ["Tournament Results"]));
+  const tourneyYears = Array.from(new Set(tResults.map(r => r.t.year))).sort((a,b) => b - a);
+  const tourneyHeader = el("div", {class:"profile-section-title", style:"display:flex; justify-content:space-between; align-items:center;"});
+  tourneyHeader.appendChild(document.createTextNode("Tournament Results"));
+  if(tourneyYears.length > 0){
+    const yearSelect = el("select", {id:"profile-year-filter", style:"font-size:11px;"});
+    yearSelect.appendChild(el("option", {value:"recent"}, ["Recent (10)"]));
+    tourneyYears.forEach(y => yearSelect.appendChild(el("option", {value:String(y)}, [String(y)])));
+    yearSelect.value = profileYearFilter;
+    yearSelect.addEventListener("change", (e) => {
+      profileYearFilter = e.target.value;
+      renderPlayerProfile(playerId);
+    });
+    tourneyHeader.appendChild(yearSelect);
+  }
+  modal.appendChild(tourneyHeader);
+  const tourneyRowsToShow = profileYearFilter === "recent"
+    ? tResults.slice(0, 10)
+    : tResults.filter(r => String(r.t.year) === profileYearFilter);
   if(tResults.length === 0){
     modal.appendChild(el("p", {}, ["No tournaments played yet."]));
   } else {
-    tResults.slice(0, 10).forEach(({t, res}) => {
+    tourneyRowsToShow.forEach(({t, res}) => {
       const bracketBtn = el("button", {class:"btn btn-small btn-ghost", "data-open-bracket": t.id}, ["Bracket"]);
       const row = el("div", {class:"tourney-row"}, [
         el("span", {class:"level-tag " + (LEVEL_TAG_CLASSES[t.level] || "")}, [LEVEL_LABELS[t.level] || t.level]),
