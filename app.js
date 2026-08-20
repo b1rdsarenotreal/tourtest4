@@ -3118,6 +3118,85 @@ function handleEntryListClick(e){
 // entrants: wild cards get a guaranteed spot first, then the rest of the
 // direct-acceptance and qualifying cutoffs are set by rank (entry-list
 // date), and finally the main-draw field is seeded using the seeding date.
+/* ---------------- Entry list field generator ---------------- */
+// Rough real-tour shape: a WATP 1000 pulls hard from the very top of the
+// rankings, a 500 from a wider band centered a bit lower, and a 250 mostly
+// skips the very top (they'd be off resting/prepping for bigger events) in
+// favor of mid-pack and rising players. Bands are (maxRank, weight) pairs,
+// checked in order — the last one (Infinity) catches everyone else.
+const FIELD_GEN_WEIGHT_BANDS = {
+  WTA1000: [{maxRank:30, weight:10}, {maxRank:60, weight:4}, {maxRank:100, weight:1}, {maxRank:Infinity, weight:0.2}],
+  WTA500:  [{maxRank:20, weight:3}, {maxRank:60, weight:8}, {maxRank:100, weight:5}, {maxRank:150, weight:2}, {maxRank:Infinity, weight:0.5}],
+  WTA250:  [{maxRank:20, weight:1}, {maxRank:50, weight:3}, {maxRank:100, weight:6}, {maxRank:200, weight:8}, {maxRank:Infinity, weight:3}]
+};
+function fieldGenWeight(level, rank){
+  const bands = FIELD_GEN_WEIGHT_BANDS[level] || FIELD_GEN_WEIGHT_BANDS.WTA250;
+  for(const b of bands){ if(rank <= b.maxRank) return b.weight; }
+  return 0.1;
+}
+
+// Efraimidis-Spirakis weighted sampling without replacement — each item
+// gets a random key scaled by its weight, then the top-k keys win. Higher
+// weight means more likely to be picked, but never guaranteed, so the same
+// tier doesn't produce an identical field every time.
+function weightedSampleWithoutReplacement(items, weightFn, k){
+  const keyed = items.map(item => ({item, key: Math.pow(Math.random(), 1 / Math.max(weightFn(item), 0.0001))}));
+  keyed.sort((a,b) => b.key - a.key);
+  return keyed.slice(0, k).map(x => x.item);
+}
+
+// Every player already committed to some OTHER tournament the same week —
+// checked across seeds, unseeded entrants, qualifying entrants, entry
+// lists, and WATP Finals groups, so the generator never double-books someone.
+function playersCommittedInWeek(weekMonday, excludeTournamentId){
+  const committed = new Set();
+  state.tournaments.forEach(t => {
+    if(t.id === excludeTournamentId) return;
+    if(mondayOf(tournamentDateMs(t)) !== weekMonday) return;
+    (t.seeds || []).forEach(id => id && committed.add(id));
+    (t.unseededEntrants || []).forEach(id => committed.add(id));
+    if(t.qualifying) (t.qualifying.entrants || []).forEach(id => committed.add(id));
+    (t.entryList || []).forEach(e => committed.add(e.playerId));
+    if(t.groups) t.groups.forEach(g => (g.playerIds || []).forEach(id => committed.add(id)));
+  });
+  return committed;
+}
+
+function handleGenerateField(){
+  const t = tournamentById(currentBracketTournamentId);
+  if(!t) return;
+  const msg = $("#entry-list-generate-msg");
+  msg.className = "form-msg";
+
+  const entryDate = rankingDateFromSelectValue($("#bracket-entry-date").value);
+  const ranks = ranksFromTotals(officialRankingsAsOf(entryDate));
+  const weekMonday = mondayOf(tournamentDateMs(t));
+  const committedElsewhere = playersCommittedInWeek(weekMonday, t.id);
+  const alreadyOnList = new Set((t.entryList || []).map(e => e.playerId));
+
+  const qualEnabled = t.qualifying && t.qualifying.enabled;
+  const qualCap = qualEnabled ? t.qualifying.numQualifiers * Math.pow(2, t.qualifying.numRounds) : 0;
+  const directSlots = Math.max(0, t.drawSize - (qualEnabled ? t.qualifying.numQualifiers : 0));
+  const target = directSlots + qualCap + Math.max(6, Math.round((directSlots + qualCap) * 0.15));
+
+  const eligible = state.players.filter(p =>
+    !p.retired &&
+    !committedElsewhere.has(p.id) &&
+    !alreadyOnList.has(p.id) &&
+    ranks[p.id]
+  );
+
+  const picked = weightedSampleWithoutReplacement(eligible, (p) => fieldGenWeight(t.level, ranks[p.id]), Math.min(target, eligible.length));
+  if(!t.entryList) t.entryList = [];
+  picked.forEach(p => t.entryList.push({playerId: p.id, wildcard: "none"}));
+  saveState();
+
+  msg.className = "form-msg ok";
+  msg.textContent = "Added " + picked.length + " player" + (picked.length===1?"":"s") + " to the entry list" +
+    (picked.length < target ? " (only " + eligible.length + " eligible players were available)" : "") + ".";
+  renderEntryListBody(t);
+}
+
 function handleProcessEntryList(){
   const t = tournamentById(currentBracketTournamentId);
   if(!t) return;
@@ -4330,6 +4409,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#entry-list-body").addEventListener("click", handleEntryListClick);
   $("#finals-entry-container").addEventListener("input", handleFinalsGroupSearchInput);
   $("#finals-entry-container").addEventListener("click", handleFinalsEntryClick);
+  $("#entry-list-generate").addEventListener("click", handleGenerateField);
   $("#entry-list-process").addEventListener("click", handleProcessEntryList);
 
   document.addEventListener("click", (e) => {
