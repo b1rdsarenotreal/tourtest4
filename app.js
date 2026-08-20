@@ -7,6 +7,7 @@ const ROUND_ORDER = ["R128","R64","R32","R16","QF","SF","F"];
 const ROUND_LABELS = {R128:"R128", R64:"R64", R32:"R32", R16:"R16", QF:"QF", SF:"SF", F:"F", Q1:"Q1", Q2:"Q2", Q3:"Q3"};
 const FRIENDLY_ROUND_NAMES = {R128:"Round of 128", R64:"Round of 64", R32:"Round of 32", R16:"Round of 16", QF:"Quarterfinals", SF:"Semifinals", F:"Final"};
 const LEVEL_LABELS = {GRAND_SLAM:"Grand Slam", WTA1000:"WATP 1000", WTA500:"WATP 500", WTA250:"WATP 250", FINALS:"WATP Finals"};
+const LEVEL_TAG_CLASSES = {GRAND_SLAM:"level-grandslam", FINALS:"level-finals", WTA1000:"level-1000", WTA500:"level-500", WTA250:"level-250"};
 const POINTS_TABLE = {
   GRAND_SLAM: {R128:10, R64:45,  R32:90, R16:180, QF:360, SF:720, F:1200, W:2000},
   WTA1000:    {R128:5,  R64:10,  R32:45,  R16:90, QF:180, SF:360, F:600,  W:1000},
@@ -1334,7 +1335,7 @@ function renderPlayerProfile(playerId){
     tResults.slice(0, 10).forEach(({t, res}) => {
       const bracketBtn = el("button", {class:"btn btn-small btn-ghost", "data-open-bracket": t.id}, ["Bracket"]);
       const row = el("div", {class:"tourney-row"}, [
-        el("span", {class:"level-tag"}, [LEVEL_LABELS[t.level] || t.level]),
+        el("span", {class:"level-tag " + (LEVEL_TAG_CLASSES[t.level] || "")}, [LEVEL_LABELS[t.level] || t.level]),
         el("span", {class:"surface-tag surface-" + t.surface}, [t.surface]),
         el("span", {class:"tourney-name"}, [t.name + " '" + String(t.year).slice(-2)]),
         el("span", {class:"tourney-champ"}, [res ? res.label : "In progress"]),
@@ -1388,7 +1389,7 @@ function renderPlayerProfile(playerId){
     finalResults.forEach(({t, isChamp, opponent, match}) => {
       const bracketBtn = el("button", {class:"btn btn-small btn-ghost", "data-open-bracket": t.id}, ["Bracket"]);
       const row = el("div", {class:"tourney-row"}, [
-        el("span", {class:"level-tag"}, [LEVEL_LABELS[t.level] || t.level]),
+        el("span", {class:"level-tag " + (LEVEL_TAG_CLASSES[t.level] || "")}, [LEVEL_LABELS[t.level] || t.level]),
         el("span", {class:"surface-tag surface-" + t.surface}, [t.surface]),
         el("span", {class:"tourney-name"}, [t.name + " '" + String(t.year).slice(-2)]),
         el("span", {class:"tourney-champ", html:
@@ -1467,7 +1468,7 @@ function tournamentCellHTML(t){
   return '<div class="cal-tourney-name">' + escapeHtml(t.name) + '</div>' +
     (t.location ? '<div class="cal-tourney-location">' + escapeHtml(t.location) + '</div>' : "") +
     '<div class="cal-tourney-tags">' +
-      '<span class="level-tag">' + escapeHtml(LEVEL_LABELS[t.level] || t.level) + '</span>' +
+      '<span class="level-tag ' + (LEVEL_TAG_CLASSES[t.level] || "") + '">' + escapeHtml(LEVEL_LABELS[t.level] || t.level) + '</span>' +
       '<span class="surface-tag surface-' + t.surface + '">' + t.surface + '</span>' +
     '</div>' +
     '<div class="cal-tourney-meta">Draw of ' + t.drawSize + '</div>' +

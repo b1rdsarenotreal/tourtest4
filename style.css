@@ -149,7 +149,6 @@ main.wrap{padding-top: 32px; padding-bottom: 80px;}
 }
 .mode-btn + .mode-btn{border-left: 1px solid var(--ink);}
 .mode-btn.active{background: var(--ink); color: var(--paper);}
-
 .empty{
   border: 1px dashed var(--line);
   border-radius: var(--radius);
@@ -320,12 +319,18 @@ main.wrap{padding-top: 32px; padding-bottom: 80px;}
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--ink-soft);
-  border: 1px solid var(--line);
+  color: var(--ink);
+  border: 1px solid transparent;
   padding: 3px 8px;
   border-radius: 20px;
   flex-shrink:0;
+  background: var(--paper-2);
 }
+.level-grandslam{background: #F3E6D7;}
+.level-finals{background: #FFFFCC;}
+.level-1000{background: #E9E9E9;}
+.level-500{background: #D4F1C5;}
+.level-250{background: #FFFFFF; border-color: var(--line);}
 .tourney-name{
   font-weight: 600;
   flex: 1;
