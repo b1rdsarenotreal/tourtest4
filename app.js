@@ -96,6 +96,7 @@ function loadState(){
   }
 }
 function saveState(){
+  rankingsAsOfCache.clear();
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }catch(e){
@@ -470,7 +471,14 @@ const MANDATORY_LEVELS = new Set(["GRAND_SLAM", "WTA1000"]);
 // This mirrors that: sum results from tournaments whose date falls in the
 // 364 days up to and including asOfMs, then apply the best-18-plus-mandatory
 // counting rule per player.
+// computeRankingsAsOf is pure given the current data + a date, and gets
+// called repeatedly for the exact same dates across many pages (peak-rank
+// lookups, rank-history charts, breakdowns) — caching it here means the 2nd+
+// call for any given date is a Map lookup instead of a full recomputation.
+// The cache is cleared in saveState() any time the underlying data changes.
+let rankingsAsOfCache = new Map();
 function computeRankingsAsOf(asOfMs){
+  if(rankingsAsOfCache.has(asOfMs)) return rankingsAsOfCache.get(asOfMs);
   const windowStart = asOfMs - 364 * MS_PER_DAY;
   const totals = new Map();
   const perPlayerResults = new Map(); // playerId -> [{points, mandatory}]
@@ -543,6 +551,7 @@ function computeRankingsAsOf(asOfMs){
     entry.points = sumCountedResults(results) + (finalsBonus.get(pid) || 0);
   });
 
+  rankingsAsOfCache.set(asOfMs, totals);
   return totals;
 }
 
