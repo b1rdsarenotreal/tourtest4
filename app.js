@@ -492,7 +492,13 @@ function computeRankingsAsOf(asOfMs){
 
   state.tournaments.forEach(t => {
     const d = tournamentDateMs(t);
-    if(d > asOfMs || d < windowStart) return;
+    // Exclusive lower bound — a result exactly 364 days (52 weeks) old
+    // belongs to the 53rd week back and should have just dropped off.
+    // Without this, a tournament recurring on an exact 364-day cycle (like
+    // the same week next year) never actually ages out, because the new
+    // and old editions both land in-window on the one date that's exactly
+    // a year-to-the-day apart.
+    if(d > asOfMs || d <= windowStart) return;
 
     if(t.level === "FINALS"){
       // WATP Finals points are pure bonus — they still award a title for the
@@ -751,7 +757,10 @@ function computePlayerResultBreakdown(playerId, asOfMs){
   const entries = [];
   state.tournaments.forEach(t => {
     const d = tournamentDateMs(t);
-    if(d > asOfMs || d < windowStart) return;
+    // Exclusive lower bound — a result exactly 364 days old is one week
+    // past the 52-week cutoff and should already be gone (see the matching
+    // comment in computeRankingsAsOf for why this has to be <=, not <).
+    if(d > asOfMs || d <= windowStart) return;
 
     if(t.level === "FINALS"){
       // WATP Finals is pure bonus (see computeRankingsAsOf) — shown here for
