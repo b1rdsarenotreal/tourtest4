@@ -890,7 +890,7 @@ function renderRankings(){
     : "";
 
   const rows = state.players
-    .filter(p => !p.retired)
+    .filter(p => isRolling ? !isPlayerRetiredAsOf(p, effectiveAsOf) : true)
     .map(p => ({p, stats: totals.get(p.id) || {points:0, titles:0}}))
     .filter(r => r.stats.points > 0)
     .sort((a,b) => b.stats.points - a.stats.points || a.p.name.localeCompare(b.p.name))
@@ -958,11 +958,7 @@ function renderRankings(){
 }
 
 /* ---------------- Players view ---------------- */
-function handleToggleRetire(playerId){
-  const p = playerById(playerId);
-  if(!p) return;
-  p.retired = !p.retired;
-  saveState();
+function refreshAfterRetireChange(playerId){
   // If the profile modal for this player is open, refresh it in place so the
   // Retire/Unretire button immediately reflects the new state.
   if(!$("#player-modal-backdrop").classList.contains("hidden")){
@@ -970,6 +966,56 @@ function handleToggleRetire(playerId){
   }
   renderPlayers();
   renderRankings();
+}
+
+function handleToggleRetire(playerId){
+  const p = playerById(playerId);
+  if(!p) return;
+  if(p.retired){
+    // Unretiring needs no date — just clear it.
+    p.retired = false;
+    p.retiredDate = null;
+    saveState();
+    refreshAfterRetireChange(playerId);
+    return;
+  }
+  openRetirePlayerModal(playerId);
+}
+
+function openRetirePlayerModal(playerId){
+  const p = playerById(playerId);
+  if(!p) return;
+  $("#rp-player-id").value = playerId;
+  $("#rp-player-name").textContent = p.name;
+  const defaultDate = new Date(getLatestActiveDate());
+  $("#rp-date").value = defaultDate.toISOString().slice(0, 10);
+  $("#retire-player-backdrop").classList.remove("hidden");
+}
+function closeRetirePlayerModal(){
+  $("#retire-player-backdrop").classList.add("hidden");
+  $("#retire-player-form").reset();
+}
+function handleRetirePlayerForm(ev){
+  ev.preventDefault();
+  const playerId = $("#rp-player-id").value;
+  const p = playerById(playerId);
+  const date = $("#rp-date").value;
+  if(!p || !date) return;
+  p.retired = true;
+  p.retiredDate = date;
+  saveState();
+  closeRetirePlayerModal();
+  refreshAfterRetireChange(playerId);
+}
+
+// A player only counts as retired for a given ranking date if their
+// retirement date is on or before it — this is what keeps every week's
+// rankings from before they retired historically accurate.
+function isPlayerRetiredAsOf(p, asOfMs){
+  if(!p.retired) return false;
+  if(!p.retiredDate) return true;
+  const retiredMs = new Date(p.retiredDate + "T00:00:00").getTime();
+  return retiredMs <= asOfMs;
 }
 
 function renderPlayers(){
@@ -4176,6 +4222,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   $("#tournaments-year-filter").addEventListener("change", renderTournaments);
+  $("#rp-cancel").addEventListener("click", closeRetirePlayerModal);
+  $("#retire-player-form").addEventListener("submit", handleRetirePlayerForm);
+  $("#retire-player-backdrop").addEventListener("click", (e) => { if(e.target.id === "retire-player-backdrop") closeRetirePlayerModal(); });
+
   $("#open-add-bye-week").addEventListener("click", openAddByeWeek);
   $("#bw-cancel").addEventListener("click", closeAddByeWeek);
   $("#add-byeweek-form").addEventListener("submit", handleAddByeWeek);

@@ -468,6 +468,24 @@
   </div>
 </div>
 
+<!-- Retire player modal -->
+<div class="modal-backdrop hidden" id="retire-player-backdrop">
+  <div class="modal">
+    <form id="retire-player-form">
+      <h3>Retire <span id="rp-player-name"></span></h3>
+      <input type="hidden" id="rp-player-id">
+      <p class="modal-help">They'll drop off the rankings from this date onward, but stay exactly as they were in any week's rankings before it — nothing about their past results changes.</p>
+      <label>Retirement date
+        <input type="date" id="rp-date" required>
+      </label>
+      <div class="form-actions">
+        <button type="button" class="btn btn-ghost" id="rp-cancel">Cancel</button>
+        <button type="submit" class="btn btn-danger">Retire</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Add bye week modal -->
 <div class="modal-backdrop hidden" id="add-byeweek-backdrop">
   <div class="modal">
