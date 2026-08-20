@@ -1636,6 +1636,12 @@ function isMainDrawWildCard(t, playerId){
 function isQualifyingWildCard(t, playerId){
   return (t.entryList || []).some(e => e.playerId === playerId && e.wildcard === "qual");
 }
+function isMainDrawProtectedRanking(t, playerId){
+  return (t.entryList || []).some(e => e.playerId === playerId && e.wildcard === "pr");
+}
+function isQualifyingProtectedRanking(t, playerId){
+  return (t.entryList || []).some(e => e.playerId === playerId && e.wildcard === "qpr");
+}
 
 function shuffleArray(arr){
   const a = arr.slice();
@@ -2810,7 +2816,8 @@ function buildQualSlotRow(t, slot, m){
   if(slot.type === "player"){
     const p = playerById(slot.playerId);
     const isWC = isQualifyingWildCard(t, slot.playerId);
-    const badges = isWC ? '<span class="wc-badge">WC</span>' : "";
+    const isPR = isQualifyingProtectedRanking(t, slot.playerId);
+    const badges = (isWC ? '<span class="wc-badge">WC</span>' : "") + (isPR ? '<span class="pr-badge">PR</span>' : "");
     nameHTML = badges + (p ? (m.status === "ready" ? playerNameHTML(p) : playerLinkHTML(p)) : "(removed player)");
   } else {
     nameHTML = "TBD"; extraClass = " slot-empty";
@@ -2996,7 +3003,7 @@ function renderEntryListBody(t){
         const row = el("div", {class:"entry-list-row"});
         row.appendChild(el("span", {class:"entry-list-name", html: playerNameHTML(p)}));
         const wcGroup = el("div", {class:"entry-list-wc-group"});
-        [["none","Entry"], ["main","Main WC"], ["qual","Q WC"]].forEach(([val, label]) => {
+        [["none","Entry"], ["main","Main WC"], ["qual","Q WC"], ["pr","Main PR"], ["qpr","Q PR"]].forEach(([val, label]) => {
           const btn = el("button", {
             type:"button",
             class:"entry-list-wc-btn" + (entry.wildcard === val ? " active-" + val : ""),
@@ -3084,14 +3091,19 @@ function handleProcessEntryList(){
 
   const mainWCs = t.entryList.filter(e => e.wildcard === "main").map(e => e.playerId);
   const qualWCs = t.entryList.filter(e => e.wildcard === "qual").map(e => e.playerId);
+  const mainPRs = t.entryList.filter(e => e.wildcard === "pr").map(e => e.playerId);
+  const qualPRs = t.entryList.filter(e => e.wildcard === "qpr").map(e => e.playerId);
   const regular = t.entryList.filter(e => e.wildcard === "none").map(e => e.playerId);
 
-  if(mainWCs.length > directSlots){
-    msg.textContent = "Too many main-draw wild cards (" + mainWCs.length + ") for " + directSlots + " direct slot" + (directSlots===1?"":"s") + ". Remove a few and try again.";
+  const mainGuaranteed = mainWCs.length + mainPRs.length;
+  const qualGuaranteed = qualWCs.length + qualPRs.length;
+
+  if(mainGuaranteed > directSlots){
+    msg.textContent = "Too many main-draw wild cards/protected rankings (" + mainGuaranteed + ") for " + directSlots + " direct slot" + (directSlots===1?"":"s") + ". Remove a few and try again.";
     return;
   }
-  if(qualEnabled && qualWCs.length > qualCap){
-    msg.textContent = "Too many qualifying wild cards (" + qualWCs.length + ") for " + qualCap + " qualifying slot" + (qualCap===1?"":"s") + ". Remove a few and try again.";
+  if(qualEnabled && qualGuaranteed > qualCap){
+    msg.textContent = "Too many qualifying wild cards/protected rankings (" + qualGuaranteed + ") for " + qualCap + " qualifying slot" + (qualCap===1?"":"s") + ". Remove a few and try again.";
     return;
   }
 
@@ -3100,16 +3112,16 @@ function handleProcessEntryList(){
     (entryRanks[a] || 999999) - (entryRanks[b] || 999999) ||
     (playerById(a) ? playerById(a).name : "").localeCompare(playerById(b) ? playerById(b).name : ""));
 
-  const mainDirectCount = Math.max(0, directSlots - mainWCs.length);
+  const mainDirectCount = Math.max(0, directSlots - mainGuaranteed);
   const mainDirect = regularSorted.slice(0, mainDirectCount);
   const leftover = regularSorted.slice(mainDirectCount);
 
-  const qualDirectCount = qualEnabled ? Math.max(0, qualCap - qualWCs.length) : 0;
+  const qualDirectCount = qualEnabled ? Math.max(0, qualCap - qualGuaranteed) : 0;
   const qualDirect = qualEnabled ? leftover.slice(0, qualDirectCount) : [];
   const alternates = qualEnabled ? leftover.slice(qualDirectCount) : leftover;
 
-  const mainField = [...mainWCs, ...mainDirect];
-  const qualField = [...qualWCs, ...qualDirect];
+  const mainField = [...mainWCs, ...mainPRs, ...mainDirect];
+  const qualField = [...qualWCs, ...qualPRs, ...qualDirect];
 
   const seedRanks = ranksFromTotals(officialRankingsAsOf(seedDate));
   const mainSorted = mainField.slice().sort((a,b) =>
@@ -3125,7 +3137,8 @@ function handleProcessEntryList(){
 
   saveState();
   msg.className = "form-msg ok";
-  msg.textContent = mainWCs.length + " main WC, " + (qualEnabled ? qualWCs.length + " qualifying WC, " : "") +
+  msg.textContent = mainWCs.length + " main WC, " + mainPRs.length + " main PR, " +
+    (qualEnabled ? qualWCs.length + " qualifying WC, " + qualPRs.length + " qualifying PR, " : "") +
     mainDirect.length + " direct into the main draw" + (qualEnabled ? ", " + qualDirect.length + " into qualifying" : "") +
     (alternates.length ? ", " + alternates.length + " on the entry list didn't make the cut." : ".");
 
@@ -3294,9 +3307,11 @@ function buildSlotRow(slot, m, which, t){
     const p = playerById(slot.playerId);
     const seedNum = t ? seedNumberForPlayer(t, slot.playerId) : null;
     const isWC = t ? isMainDrawWildCard(t, slot.playerId) : false;
+    const isPR = t ? isMainDrawProtectedRanking(t, slot.playerId) : false;
     const isQ = t ? isMainDrawQualifier(t, slot.playerId) : false;
     const badges = (seedNum ? '<span class="seed-badge">' + seedNum + '</span>' : "") +
       (isWC ? '<span class="wc-badge">WC</span>' : "") +
+      (isPR ? '<span class="pr-badge">PR</span>' : "") +
       (isQ ? '<span class="qual-badge">Q</span>' : "");
     // Ready matches: clicking a name awards that player the win by walkover.
     // Everything else: clicking a name opens their profile.

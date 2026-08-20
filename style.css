@@ -528,6 +528,8 @@ form textarea{
 .entry-list-wc-btn.active-none{background: var(--ink); color: var(--paper); border-color: var(--ink);}
 .entry-list-wc-btn.active-main{background: var(--ball); color: white; border-color: var(--ball);}
 .entry-list-wc-btn.active-qual{background: var(--pink); color: white; border-color: var(--pink);}
+.entry-list-wc-btn.active-pr{background: #B8860B; color: white; border-color: #B8860B;}
+.entry-list-wc-btn.active-qpr{background: #D4A537; color: white; border-color: #D4A537;}
 .entry-list-remove{
   background: var(--paper-2); border: none; border-radius: 50%;
   width: 20px; height: 20px; flex-shrink: 0; cursor: pointer;
@@ -931,6 +933,17 @@ form textarea{
   font-weight: 700;
   color: white;
   background: var(--clay);
+  padding: 1px 4px;
+  border-radius: 2px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.pr-badge{
+  font-family:'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: white;
+  background: #B8860B;
   padding: 1px 4px;
   border-radius: 2px;
   margin-right: 4px;
