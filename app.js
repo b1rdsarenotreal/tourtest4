@@ -1108,16 +1108,20 @@ function renderPlayerProfile(playerId){
   const yearWins = yearMatches.filter(m => m.winnerId === playerId).length;
   const yearLosses = yearMatches.length - yearWins;
   const totals = computeRankingsAsOf(latest);
-  const stats = totals.get(playerId) || {points:0, titles:0};
   const careerStats = computeRankings(null).get(playerId) || {points:0, titles:0};
+  const seasonStats = computeRankings(currentYear).get(playerId) || {points:0, titles:0};
   const currentRank = ranksFromTotals(totals)[playerId] || null;
 
-  // surface breakdown (also tour-level only, excludes qualifying)
+  // surface breakdown (also tour-level only, excludes qualifying) — both career and this season
   const surfaceStats = {hard:{w:0,l:0}, clay:{w:0,l:0}, grass:{w:0,l:0}};
+  const seasonSurfaceStats = {hard:{w:0,l:0}, clay:{w:0,l:0}, grass:{w:0,l:0}};
   tourMatches.forEach(m => {
     const t = tournamentById(m.tournamentId);
     if(!t || !surfaceStats[t.surface]) return;
     if(m.winnerId === playerId) surfaceStats[t.surface].w++; else surfaceStats[t.surface].l++;
+    if(t.year === currentYear){
+      if(m.winnerId === playerId) seasonSurfaceStats[t.surface].w++; else seasonSurfaceStats[t.surface].l++;
+    }
   });
 
   // rank history across every recorded tour "week"
@@ -1165,15 +1169,15 @@ function renderPlayerProfile(playerId){
   }
 
   const statsBox = el("div", {class:"profile-stats"}, [
-    el("div", {class:"stat-box"}, [el("div", {class:"stat-num"}, [String(stats.points.toLocaleString())]), el("div", {class:"stat-label"}, ["Points"])]),
-    el("div", {class:"stat-box"}, [el("div", {class:"stat-num"}, [String(careerStats.titles)]), el("div", {class:"stat-label"}, ["Career Titles"])]),
-    el("div", {class:"stat-box"}, [el("div", {class:"stat-num"}, [wins + "-" + losses]), el("div", {class:"stat-label"}, ["Win-Loss"])])
+    el("div", {class:"stat-box"}, [el("div", {class:"stat-num"}, [String(seasonStats.points.toLocaleString())]), el("div", {class:"stat-label"}, [String(currentYear) + " Points"])]),
+    el("div", {class:"stat-box"}, [el("div", {class:"stat-num"}, [String(seasonStats.titles)]), el("div", {class:"stat-label"}, [String(currentYear) + " Titles"])]),
+    el("div", {class:"stat-box"}, [el("div", {class:"stat-num"}, [yearWins + "-" + yearLosses]), el("div", {class:"stat-label"}, [String(currentYear) + " Win-Loss"])])
   ]);
   modal.appendChild(statsBox);
 
   const surfaceRow = el("div", {class:"profile-stats"}, ["hard","clay","grass"].map(s =>
     el("div", {class:"stat-box"}, [
-      el("div", {class:"stat-num"}, [surfaceStats[s].w + "-" + surfaceStats[s].l]),
+      el("div", {class:"stat-num"}, [seasonSurfaceStats[s].w + "-" + seasonSurfaceStats[s].l]),
       el("div", {class:"stat-label"}, [s])
     ])
   ));
@@ -1230,19 +1234,20 @@ function renderPlayerProfile(playerId){
     });
   }
 
-  modal.appendChild(el("div", {class:"profile-section-title"}, ["Season & Career Record"]));
-  const yearPct = (yearWins + yearLosses) > 0 ? Math.round((yearWins / (yearWins + yearLosses)) * 100) : 0;
-  const careerPct = (wins + losses) > 0 ? Math.round((wins / (wins + losses)) * 100) : 0;
-  modal.appendChild(el("div", {class:"season-career-box"}, [
-    el("div", {class:"scr-row"}, [
-      el("span", {class:"scr-label"}, [String(currentYear) + " Season"]),
-      el("span", {class:"scr-value"}, [yearWins + "\u2013" + yearLosses + (yearWins + yearLosses > 0 ? " (" + yearPct + "%)" : "")])
-    ]),
-    el("div", {class:"scr-row"}, [
-      el("span", {class:"scr-label"}, ["Career"]),
-      el("span", {class:"scr-value"}, [wins + "\u2013" + losses + (wins + losses > 0 ? " (" + careerPct + "%)" : "")])
+  modal.appendChild(el("div", {class:"profile-section-title"}, ["Career Record"]));
+  const careerStatsBox = el("div", {class:"profile-stats"}, [
+    el("div", {class:"stat-box"}, [el("div", {class:"stat-num"}, [String(careerStats.points.toLocaleString())]), el("div", {class:"stat-label"}, ["Points"])]),
+    el("div", {class:"stat-box"}, [el("div", {class:"stat-num"}, [String(careerStats.titles)]), el("div", {class:"stat-label"}, ["Career Titles"])]),
+    el("div", {class:"stat-box"}, [el("div", {class:"stat-num"}, [wins + "-" + losses]), el("div", {class:"stat-label"}, ["Win-Loss"])])
+  ]);
+  modal.appendChild(careerStatsBox);
+  const careerSurfaceRow = el("div", {class:"profile-stats"}, ["hard","clay","grass"].map(s =>
+    el("div", {class:"stat-box"}, [
+      el("div", {class:"stat-num"}, [surfaceStats[s].w + "-" + surfaceStats[s].l]),
+      el("div", {class:"stat-label"}, [s])
     ])
-  ]));
+  ));
+  modal.appendChild(careerSurfaceRow);
 
   modal.appendChild(el("div", {class:"profile-section-title"}, ["Final Results"]));
   const finalResults = getFinalResultsForPlayer(playerId);

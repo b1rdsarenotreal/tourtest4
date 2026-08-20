@@ -327,32 +327,6 @@ main.wrap{padding-top: 32px; padding-bottom: 80px;}
 .final-champ{color: var(--grass) !important;}
 .final-runnerup{color: var(--ink-soft) !important;}
 
-.season-career-box{
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-  margin-bottom: 22px;
-}
-.scr-row{
-  display:flex; align-items:center; justify-content:space-between;
-  padding: 12px 16px;
-  background: white;
-}
-.scr-row + .scr-row{border-top: 1px solid var(--line); background: var(--paper-2);}
-.scr-label{
-  font-family:'Oswald', sans-serif;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-size: 13px;
-  color: var(--ink-soft);
-}
-.scr-value{
-  font-family:'JetBrains Mono', monospace;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
 /* ---------- Forms ---------- */
 .card.form-card{
   background: white;
