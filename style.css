@@ -146,14 +146,10 @@ main.wrap{padding-top: 32px; padding-bottom: 80px;}
   border: none;
   padding: 7px 14px;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 .mode-btn + .mode-btn{border-left: 1px solid var(--ink);}
 .mode-btn.active{background: var(--ink); color: var(--paper);}
 
-.slam-badge{flex-shrink: 0; vertical-align: middle;}
 .empty{
   border: 1px dashed var(--line);
   border-radius: var(--radius);

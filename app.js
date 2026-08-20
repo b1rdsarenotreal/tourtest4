@@ -813,32 +813,6 @@ function abbreviateTournamentName(name){
   return (words[0] || "").slice(0, 3).toUpperCase();
 }
 
-// Small original badge icon for a Grand Slam — a colored circle with the
-// tournament's initials, deterministic per name (not a copy of any real
-// tournament's actual logo/branding).
-const SLAM_BADGE_COLORS = ["#0B2A4A", "#0072CE", "#E10098", "#B5542E", "#3E8E41", "#8B5FBF"];
-function slamBadgeColor(majorName){
-  let hash = 0;
-  for(let i = 0; i < majorName.length; i++){ hash = (hash * 31 + majorName.charCodeAt(i)) >>> 0; }
-  return SLAM_BADGE_COLORS[hash % SLAM_BADGE_COLORS.length];
-}
-function slamBadgeHTML(majorName, size){
-  size = size || 20;
-  // Assign by calendar-order position instead of hashing the name, so the
-  // handful of majors you actually have never collide on the same color.
-  const allNames = sortMajorNamesByCalendarOrder(Array.from(new Set([
-    ...state.tournaments.filter(t => t.level === "GRAND_SLAM").map(t => t.name),
-    ...state.players.flatMap(p => getHistoricalSlamsArray(p).map(e => e.majorName).filter(Boolean))
-  ])));
-  const idx = allNames.indexOf(majorName);
-  const color = idx >= 0 ? SLAM_BADGE_COLORS[idx % SLAM_BADGE_COLORS.length] : slamBadgeColor(majorName);
-  const initials = abbreviateTournamentName(majorName).slice(0, 3);
-  return '<svg class="slam-badge" width="' + size + '" height="' + size + '" viewBox="0 0 40 40" title="' + escapeHtml(majorName) + '">' +
-    '<circle cx="20" cy="20" r="19" fill="' + color + '" stroke="white" stroke-width="1.5"/>' +
-    '<text x="20" y="25" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" fill="white">' + escapeHtml(initials) + '</text>' +
-    '</svg>';
-}
-
 function resultColorClass(entry){
   if(entry.isFinalsBonus) return "res-finals";
   if(entry.isQualifying) return "res-qual";
@@ -1210,7 +1184,7 @@ function grandSlamGridHTML(playerId){
   html += '<th>SR</th><th>W&ndash;L</th><th>Win %</th></tr></thead><tbody>';
 
   data.grid.forEach(row => {
-    html += '<tr><td class="gs-major-name">' + slamBadgeHTML(row.name, 18) + ' ' + escapeHtml(row.name) + '</td>';
+    html += '<tr><td class="gs-major-name">' + escapeHtml(row.name) + '</td>';
     row.cells.forEach(c => {
       html += '<td class="gs-cell ' + c.cls + '">' + escapeHtml(c.label) + '</td>';
     });
@@ -3592,7 +3566,7 @@ function populateSlamFilterToggle(){
 
   const toggle = $("#slam-filter-toggle");
   toggle.innerHTML = '<button class="mode-btn" data-slam-filter="TOTAL">Total</button>' +
-    majorNames.map(n => '<button class="mode-btn" data-slam-filter="' + escapeHtml(n) + '">' + slamBadgeHTML(n, 16) + ' ' + escapeHtml(n) + '</button>').join("");
+    majorNames.map(n => '<button class="mode-btn" data-slam-filter="' + escapeHtml(n) + '">' + escapeHtml(n) + '</button>').join("");
   $all("[data-slam-filter]").forEach(btn => btn.classList.toggle("active", btn.dataset.slamFilter === slamFilter));
 }
 
