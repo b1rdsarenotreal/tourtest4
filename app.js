@@ -1965,7 +1965,7 @@ function renderFinalsGroupSetup(t){
   const seedMsg = el("span", {class:"form-msg"}, []);
   autoSeedBtn.addEventListener("click", () => {
     const asOf = rankingDateFromSelectValue(dateSelect.value);
-    const ranks = ranksFromTotals(officialRankingsAsOf(asOf));
+    const ranks = ranksFromTotals(computeRankingsAsOf(asOf));
     const used = new Set((t.seeds || []).filter(Boolean));
     const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
     const candidates = state.players
@@ -2971,7 +2971,7 @@ function handleAutofillMain(){
   const qualSlots = t.qualifying.enabled ? t.qualifying.numQualifiers : 0;
   const directSlots = Math.max(0, t.drawSize - qualSlots);
 
-  const entryRanks = ranksFromTotals(officialRankingsAsOf(entryDate));
+  const entryRanks = ranksFromTotals(computeRankingsAsOf(entryDate));
   const alreadyUsed = new Set([...(t.seeds || []).filter(Boolean), ...(t.unseededEntrants || [])]);
   const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
   const fieldCandidates = state.players
@@ -2983,7 +2983,7 @@ function handleAutofillMain(){
   const openUnseededCount = Math.max(0, directSlots - t.seeds.filter(Boolean).length - (t.unseededEntrants||[]).length);
 
   const field = fieldCandidates.slice(0, openSeedSlots.length + openUnseededCount);
-  const seedRanks = ranksFromTotals(officialRankingsAsOf(seedDate));
+  const seedRanks = ranksFromTotals(computeRankingsAsOf(seedDate));
   const reranked = field.slice().sort((a,b) => (seedRanks[a.id] || 99999) - (seedRanks[b.id] || 99999) || a.name.localeCompare(b.name));
 
   let filled = 0;
@@ -3011,7 +3011,7 @@ function handleAutofillQual(){
   const qualSlots = t.qualifying.numQualifiers * Math.pow(2, t.qualifying.numRounds);
   const directSlots = Math.max(0, t.drawSize - t.qualifying.numQualifiers);
 
-  const entryRanks = ranksFromTotals(officialRankingsAsOf(entryDate));
+  const entryRanks = ranksFromTotals(computeRankingsAsOf(entryDate));
   const usedInMain = new Set([...(t.seeds || []).filter(Boolean), ...(t.unseededEntrants || [])]);
   const usedInQual = new Set(t.qualifying.entrants || []);
   const committedElsewhere = playersCommittedInWeek(mondayOf(tournamentDateMs(t)), t.id);
@@ -3178,7 +3178,7 @@ function handleGenerateField(){
   msg.className = "form-msg";
 
   const entryDate = rankingDateFromSelectValue($("#bracket-entry-date").value);
-  const ranks = ranksFromTotals(officialRankingsAsOf(entryDate));
+  const ranks = ranksFromTotals(computeRankingsAsOf(entryDate));
   const weekMonday = mondayOf(tournamentDateMs(t));
   const committedElsewhere = playersCommittedInWeek(weekMonday, t.id);
   const alreadyOnList = new Set((t.entryList || []).map(e => e.playerId));
@@ -3237,7 +3237,7 @@ function handleProcessEntryList(){
     return;
   }
 
-  const entryRanks = ranksFromTotals(officialRankingsAsOf(entryDate));
+  const entryRanks = ranksFromTotals(computeRankingsAsOf(entryDate));
   const regularSorted = regular.slice().sort((a,b) =>
     (entryRanks[a] || 999999) - (entryRanks[b] || 999999) ||
     (playerById(a) ? playerById(a).name : "").localeCompare(playerById(b) ? playerById(b).name : ""));
@@ -3253,7 +3253,7 @@ function handleProcessEntryList(){
   const mainField = [...mainWCs, ...mainPRs, ...mainDirect];
   const qualField = [...qualWCs, ...qualPRs, ...qualDirect];
 
-  const seedRanks = ranksFromTotals(officialRankingsAsOf(seedDate));
+  const seedRanks = ranksFromTotals(computeRankingsAsOf(seedDate));
   const mainSorted = mainField.slice().sort((a,b) =>
     (seedRanks[a] || 999999) - (seedRanks[b] || 999999) ||
     (playerById(a) ? playerById(a).name : "").localeCompare(playerById(b) ? playerById(b).name : ""));
