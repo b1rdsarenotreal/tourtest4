@@ -446,7 +446,7 @@ form textarea{
   height: 13px;
   object-fit: cover;
   border-radius: 2px;
-  vertical-align: -2px;
+  vertical-align: middle;
   margin-right: 5px;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
   background: var(--paper-2);

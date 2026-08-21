@@ -60,7 +60,7 @@ function countryToISO2(code){
 function flagImgHTML(code){
   const iso2 = countryToISO2(code);
   if(!iso2) return "";
-  return '<img class="flag-img" src="https://flagcdn.com/' + iso2.toLowerCase() + '.svg" alt="' + iso2 + '" loading="lazy" onerror="this.style.display=\'none\'">';
+  return '<img class="flag-img" src="https://flagcdn.com/' + iso2.toLowerCase() + '.svg" alt="' + iso2 + '" width="18" height="13" loading="lazy" onerror="this.style.display=\'none\'">';
 }
 // Flag + code, for standalone country display (tables, cards).
 function countryDisplayHTML(code){
